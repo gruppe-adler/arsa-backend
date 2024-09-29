@@ -1,0 +1,7 @@
+profiles/
+configs/
+
+.env
+
+notes.txt
+test-config.json
