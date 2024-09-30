@@ -4,6 +4,8 @@ import { join } from '@std/path';
 
 import { ArmaReforgerServer } from "./ars.ts";
 
+import { getServers } from './utils.ts';
+
 // @deno-types="npm:@types/express@4.17.15"
 import express from "npm:express@4.18.2";
 import cors from "npm:cors@2.8.5"
@@ -20,11 +22,18 @@ if (import.meta.main) {
 	app.use(express.json()) // parsing JSON in req; result available in req.json
 
 	app.post("/api/add-server/", (req, res) => {
+		const config = req.body;
 		const uuid = crypto.randomUUID();
+		config.uuid = uuid;
 		console.log(`Adding Arma Reforger Server with UUID: ${uuid}`);
 		console.log(req.body);
-		Deno.writeTextFile(`configs/${uuid}.json`, JSON.stringify(req.body, null, 2))
+		Deno.writeTextFile(`configs/${uuid}.json`, JSON.stringify(config, null, 2))
 			.then(() => res.json({uuid}));
+	});
+
+	app.get("/api/get-servers", (req, res) => {
+		console.log(`Getting list of Arma Reforger Servers.`);
+		getServers('./configs').then(servers => res.json(servers));
 	});
 
 	app.get("/api/server/:uuid/start", (req, res) => {
