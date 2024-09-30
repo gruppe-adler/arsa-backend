@@ -22,18 +22,24 @@ if (import.meta.main) {
 	app.use(express.json()) // parsing JSON in req; result available in req.json
 
 	app.post("/api/add-server/", (req, res) => {
-		const config = req.body;
+		const server = req.body;
 		const uuid = crypto.randomUUID();
-		config.uuid = uuid;
+		server.uuid = uuid;
 		console.log(`Adding Arma Reforger Server with UUID: ${uuid}`);
 		console.log(req.body);
-		Deno.writeTextFile(`configs/${uuid}.json`, JSON.stringify(config, null, 2))
+		Deno.mkdir(`servers/${uuid}`)
+			.then(() => {
+				Deno.writeTextFile(`./servers/${uuid}/server.json`, JSON.stringify(server, null, 2))
+			})
+			.then(() => {
+				Deno.writeTextFile(`./servers/${uuid}/config.json`, JSON.stringify(server.config, null, 2))
+			})
 			.then(() => res.json({uuid}));
 	});
 
 	app.get("/api/get-servers", (req, res) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
-		getServers('./configs').then(servers => res.json(servers));
+		getServers('./servers').then(servers => res.json(servers));
 	});
 
 	app.get("/api/server/:uuid/start", (req, res) => {
