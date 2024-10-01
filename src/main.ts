@@ -47,7 +47,7 @@ if (import.meta.main) {
 		// create ars instance and start it
 		const ars = new ArmaReforgerServer(req.params.uuid);
 		started.push(ars);
-		res.json({result: true});
+		res.json({value: true});
 	});
 
 	app.get("/api/server/:uuid/stop", (req, res) => {
@@ -55,7 +55,7 @@ if (import.meta.main) {
 		// stop running ars instance
 		const ars = started.find(i => i.uuid === req.params.uuid);
 		ars?.stop();
-		res.json({result: true});
+		res.json({value: true});
 	});
 
 	app.get("/api/server/:uuid/isRunning", (req, res) => {
@@ -63,7 +63,7 @@ if (import.meta.main) {
 		// create ars instance and start it
 		const ars = started.find(i => i.uuid === req.params.uuid);
 		if(!ars) { res.json({result: false}); console.log(false); }
-		else { ars.isRunning().then( isRunning => res.json({ result: isRunning })); };
+		else { ars.isRunning().then( isRunning => res.json({ value: isRunning })); };
 	});
 	
 	const server = app.listen(8000);
