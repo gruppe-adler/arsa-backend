@@ -13,3 +13,20 @@ export async function getServers(dir: string) {
 
 	return servers;
 }
+
+export async function getServer(dir: string, uuid: string) {
+	let server: object = Object;
+	for await (const dirEntry of Deno.readDir(dir)) {
+		if(dirEntry.name === uuid) {
+			const fileContent = await Deno.readTextFile(
+				join(dir, dirEntry.name, 'server.json'),
+			);
+			server = JSON.parse(fileContent);
+			console.log(dirEntry.name);
+
+			break;
+		}
+	}
+
+	return server;
+}

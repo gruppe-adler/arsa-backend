@@ -5,7 +5,7 @@ import { join } from '@std/path';
 
 import { ArmaReforgerServer } from './ars.ts';
 
-import { getServers } from './utils.ts';
+import { getServer, getServers } from './utils.ts';
 
 // @deno-types="npm:@types/express@4.17.15"
 import express from 'npm:express@4.18.2';
@@ -45,6 +45,11 @@ if (import.meta.main) {
 	app.get('/api/get-servers', (req, res) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
 		getServers('./servers').then((servers) => res.json(servers));
+	});
+
+	app.get('/api/server/:uuid', (req, res) => {
+		console.log(`Getting Arma Reforger Server with UUID: ${req.params.uuid}`);
+		getServer('./servers', req.params.uuid).then((server) => res.json(server));
 	});
 
 	app.get('/api/server/:uuid/start', (req, res) => {
