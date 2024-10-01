@@ -20,7 +20,7 @@ export class ArmaReforgerServer {
         const args = [
             `-i ${this.uuid}`, 
             `-d "${this.installPath}"`, 
-            `-c "${join(Deno.cwd(), 'configs', this.uuid + '.json')}"`, 
+            `-c "${join(Deno.cwd(), 'servers', this.uuid, 'config.json')}"`, 
             `-p "${join(Deno.cwd(), 'profiles', this.uuid)}"`]
 
         this.process = new ProcessManager(Deno.cwd(), 'ars-start.sh', args);
@@ -36,5 +36,12 @@ export class ArmaReforgerServer {
                 Deno.kill(parseInt(pid));
                 console.log('Arma Refoger Server stopped.');
             });
+    }
+
+    async isRunning() : Promise<boolean> {
+        const pid = await Deno.readTextFile(join(this.installPath, `${this.uuid}.pid`));
+        const command = new Deno.Command('pgrep', { cwd: this.installPath, args: ['-F', this.uuid + '.pid']});
+        const result = await command.output();
+        return new TextDecoder().decode(result.stdout) !== '' ? true : false;
     }
 }

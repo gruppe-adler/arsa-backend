@@ -13,7 +13,7 @@ import cors from "npm:cors@2.8.5"
 //TODO(@y0014984): oak verwenden? https://jsr.io/@oak/oak
 
 if (import.meta.main) {
-	const running: ArmaReforgerServer[] = []; // running servers
+	const started: ArmaReforgerServer[] = []; // started servers
 
 	const app = express();
 
@@ -46,16 +46,24 @@ if (import.meta.main) {
 		console.log(`Starting Arma Reforger Server with UUID: ${req.params.uuid}`);
 		// create ars instance and start it
 		const ars = new ArmaReforgerServer(req.params.uuid);
-		running.push(ars);
+		started.push(ars);
 		res.json({result: true});
 	});
 
 	app.get("/api/server/:uuid/stop", (req, res) => {
 		console.log(`Stopping Arma Reforger Server with UUID: ${req.params.uuid}`);
-		// create ars instance and start it
-		const ars = running.find(i => i.uuid === req.params.uuid);
+		// stop running ars instance
+		const ars = started.find(i => i.uuid === req.params.uuid);
 		ars?.stop();
 		res.json({result: true});
+	});
+
+	app.get("/api/server/:uuid/isRunning", (req, res) => {
+		console.log(`Arma Reforger Server with UUID ${req.params.uuid} is running:`);
+		// create ars instance and start it
+		const ars = started.find(i => i.uuid === req.params.uuid);
+		if(!ars) { res.json({result: false}); console.log(false); }
+		else { ars.isRunning().then( isRunning => res.json({ result: isRunning })); };
 	});
 	
 	const server = app.listen(8000);
