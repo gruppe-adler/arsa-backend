@@ -42,6 +42,21 @@ if (import.meta.main) {
 			.then(() => res.json({ uuid }));
 	});
 
+	app.post('/api/server/:uuid/update', (req, res) => {
+		const server = req.body;
+		console.log(`Updating Arma Reforger Server with UUID: ${req.params.uuid}`);
+		console.log(req.body);
+		Deno.writeTextFile(
+			`./servers/${req.params.uuid}/server.json`,
+			JSON.stringify(server, null, 2),
+		);
+		Deno.writeTextFile(
+			`./servers/${req.params.uuid}/config.json`,
+			JSON.stringify(server.config, null, 2),
+		);
+		res.json({ value: true });
+	});
+
 	app.get('/api/get-servers', (req, res) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
 		getServers('./servers').then((servers) => res.json(servers));
