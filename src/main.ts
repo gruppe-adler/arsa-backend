@@ -12,6 +12,10 @@ import cors from "npm:cors@2.8.5"
 
 //TODO(@y0014984): oak verwenden? https://jsr.io/@oak/oak
 
+//TODO(@y0014984): Check for /servers and /profiles and create them if missing
+//TODO(@y0014984): Allow setting /servers and /profiles directories via environment variable
+//TODO(@y0014984): Change from frontend polling to backend pushing updates about isRunning
+
 if (import.meta.main) {
 	const started: ArmaReforgerServer[] = []; // started servers
 
@@ -62,7 +66,7 @@ if (import.meta.main) {
 		console.log(`Arma Reforger Server with UUID ${req.params.uuid} is running:`);
 		// create ars instance and start it
 		const ars = started.find(i => i.uuid === req.params.uuid);
-		if(!ars) { res.json({result: false}); console.log(false); }
+		if(!ars) { res.json({value: false}); console.log(false); }
 		else { ars.isRunning().then( isRunning => res.json({ value: isRunning })); };
 	});
 	
