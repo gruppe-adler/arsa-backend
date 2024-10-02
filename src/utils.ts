@@ -17,7 +17,7 @@ export async function getServers(dir: string) {
 export async function getServer(dir: string, uuid: string) {
 	let server: object = Object;
 	for await (const dirEntry of Deno.readDir(dir)) {
-		if(dirEntry.name === uuid) {
+		if (dirEntry.name === uuid) {
 			const fileContent = await Deno.readTextFile(
 				join(dir, dirEntry.name, 'server.json'),
 			);

@@ -44,7 +44,9 @@ if (import.meta.main) {
 
 	app.post('/api/server/:uuid/update', (req, res) => {
 		const server = req.body;
-		console.log(`Updating Arma Reforger Server with UUID: ${req.params.uuid}`);
+		console.log(
+			`Updating Arma Reforger Server with UUID: ${req.params.uuid}`,
+		);
 		console.log(req.body);
 		Deno.writeTextFile(
 			`./servers/${req.params.uuid}/server.json`,
@@ -63,8 +65,12 @@ if (import.meta.main) {
 	});
 
 	app.get('/api/server/:uuid', (req, res) => {
-		console.log(`Getting Arma Reforger Server with UUID: ${req.params.uuid}`);
-		getServer('./servers', req.params.uuid).then((server) => res.json(server));
+		console.log(
+			`Getting Arma Reforger Server with UUID: ${req.params.uuid}`,
+		);
+		getServer('./servers', req.params.uuid).then((server) =>
+			res.json(server)
+		);
 	});
 
 	app.get('/api/server/:uuid/start', (req, res) => {
@@ -112,17 +118,19 @@ if (import.meta.main) {
 	});
 
 	app.get('/api/server/:uuid/isRunning', (req, res) => {
-		console.log(
-			`Arma Reforger Server with UUID ${req.params.uuid} is running:`,
-		);
 		// create ars instance and start it
 		const ars = started.find((i) => i.uuid === req.params.uuid);
 		if (!ars) {
 			res.json({ value: false });
-			console.log(false);
-		} else {ars.isRunning().then((isRunning) =>
-				res.json({ value: isRunning })
-			);}
+			console.log(
+				`Arma Reforger Server with UUID ${req.params.uuid} is running: ${false}`,
+			);
+		} else {ars.isRunning().then((isRunning) => {
+				console.log(
+					`Arma Reforger Server with UUID ${req.params.uuid} is running: ${isRunning}`,
+				);
+				res.json({ value: isRunning });
+			});}
 	});
 
 	const server = app.listen(8000);
