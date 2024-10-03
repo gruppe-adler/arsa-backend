@@ -1,15 +1,13 @@
 import '@std/dotenv/load'; // Automatically load environment variables from a `.env` file
-
-import { existsSync } from '@std/fs';
 import { join } from '@std/path';
 
-import { ArmaReforgerServer } from './ars.ts';
-
-import { getServer, getServers } from './utils.ts';
-
 // @deno-types="npm:@types/express@4.17.15"
-import express from 'npm:express@4.18.2';
+import express from 'npm:express@^4.17.15';
 import cors from 'npm:cors@2.8.5';
+import { publicIpv4 } from 'npm:public-ip@7.0.1';
+
+import { ArmaReforgerServer } from './ars.ts';
+import { getServer, getServers } from './utils.ts';
 
 if (import.meta.main) {
 	const started: ArmaReforgerServer[] = []; // started servers
@@ -57,6 +55,13 @@ if (import.meta.main) {
 			JSON.stringify(server.config, null, 2),
 		);
 		res.json({ value: true });
+	});
+
+	app.get('/api/get-public-ip', (req, res) => {
+		publicIpv4().then((ipv4) => {
+			console.log(`Getting Public IP of this Host: ${ipv4}`);
+			res.json({ ipv4 });
+		});
 	});
 
 	app.get('/api/get-servers', (req, res) => {
