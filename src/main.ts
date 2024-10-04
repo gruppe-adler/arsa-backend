@@ -10,6 +10,13 @@ import { ArmaReforgerServer } from './ars.ts';
 import { getServer, getServers, getLogs, getLogFile } from './utils.ts';
 
 if (import.meta.main) {
+	try {
+		Deno.mkdirSync('profiles')
+		Deno.mkdirSync('servers')
+	} catch (error) {
+		console.log(`Can't create folders. Error: ${error}`)
+	}
+	
 	const started: ArmaReforgerServer[] = []; // started servers
 
 	const app = express();
