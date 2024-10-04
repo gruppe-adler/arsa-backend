@@ -7,7 +7,7 @@ import cors from 'npm:cors@2.8.5';
 import { publicIpv4 } from 'npm:public-ip@7.0.1';
 
 import { ArmaReforgerServer } from './ars.ts';
-import { getServer, getServers } from './utils.ts';
+import { getServer, getServers, getLogs, getLogFile } from './utils.ts';
 
 if (import.meta.main) {
 	const started: ArmaReforgerServer[] = []; // started servers
@@ -57,6 +57,22 @@ if (import.meta.main) {
 		res.json({ value: true });
 	});
 
+	app.get('/api/server/:uuid/logs', (req, res) => {
+		const server = req.body;
+		console.log(
+			`Getting Log Events for Arma Reforger Server with UUID: ${req.params.uuid}`,
+		);
+		getLogs(req.params.uuid).then((logs) => res.json(logs));
+	});
+
+	app.get('/api/server/:uuid/log/:log/:file', (req, res) => {
+		const server = req.body;
+		console.log(
+			`Getting Log File ${req.params.log}/${req.params.file} for Arma Reforger Server with UUID: ${req.params.uuid}`,
+		);
+		getLogFile(req.params.uuid, req.params.log, req.params.file).then((logFile) => res.json(logFile));
+	});
+
 	app.get('/api/get-public-ip', (req, res) => {
 		publicIpv4().then((ipv4) => {
 			console.log(`Getting Public IP of this Host: ${ipv4}`);
@@ -66,14 +82,14 @@ if (import.meta.main) {
 
 	app.get('/api/get-servers', (req, res) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
-		getServers('./servers').then((servers) => res.json(servers));
+		getServers().then((servers) => res.json(servers));
 	});
 
 	app.get('/api/server/:uuid', (req, res) => {
 		console.log(
 			`Getting Arma Reforger Server with UUID: ${req.params.uuid}`,
 		);
-		getServer('./servers', req.params.uuid).then((server) =>
+		getServer(req.params.uuid).then((server) =>
 			res.json(server)
 		);
 	});
