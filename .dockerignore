@@ -1,0 +1,15 @@
+profiles/
+servers/
+
+.env
+
+notes.txt
+
+.vscode
+.git
+.gitignore
+.dockerignore
+Dockerfile
+compose.yaml
+
+!/ars/Dockerfile

@@ -1,8 +1,6 @@
 profiles/
-configs/
 servers/
 
 .env
 
 notes.txt
-test-config.json

@@ -1,6 +1,10 @@
 {
 	"tasks": {
 		"dev": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts",
+		"prod": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts",
+		"docker": "docker buildx build -t arsa-backend .",
+		"docker-ars": "docker buildx build -t ars ./ars",
+		"docker-run": "docker run -d --rm -p 3000:3000 --name arsa-backend arsa-backend",
 		"lint": "deno lint",
 		"fmt": "deno fmt"
 	},
