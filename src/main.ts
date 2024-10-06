@@ -10,12 +10,12 @@ import { ArmaReforgerServer } from './ars.ts';
 import { getServer, getServers, getLogs, getLogFile } from './utils.ts';
 
 if (import.meta.main) {
-	try {
+/* 	try {
 		Deno.mkdirSync('profiles')
 		Deno.mkdirSync('servers')
 	} catch (error) {
 		console.log(`Can't create folders. Error: ${error}`)
-	}
+	} */
 	
 	const started: ArmaReforgerServer[] = []; // started servers
 
@@ -161,7 +161,7 @@ if (import.meta.main) {
 			});}
 	});
 
-	const server = app.listen(8000);
+	const server = app.listen(3000);
 
 	// things to do if <CTRL+C> is pressed
 	Deno.addSignalListener(
