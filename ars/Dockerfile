@@ -16,6 +16,8 @@ USER ubuntu
 # set working directory
 WORKDIR "/root/.local/share/Steam/steamapps/common/Arma Reforger Server/"
 
-EXPOSE 2001
+EXPOSE 2001/tcp
+EXPOSE 17777/tcp
+EXPOSE 19999/tcp
 
 ENTRYPOINT ["./ArmaReforgerServer"]
