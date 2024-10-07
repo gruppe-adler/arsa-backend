@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 while getopts i:p:a:r: flag
 do
@@ -10,7 +10,7 @@ do
     esac
 done
 
-docker run --rm \
+docker run -d --rm \
 --network=arsa_network \
 --hostname ${uuid} \
 --mount type=volume,source=arsa-profiles,target=/ars/profiles \

@@ -117,8 +117,13 @@ if (import.meta.main) {
 		);
 		// stop running ars instance
 		const ars = started.find((i) => i.uuid === req.params.uuid);
-		ars?.stop();
-		res.json({ value: true });
+		if(ars){
+			ars.stop();
+			started.splice(started.indexOf(ars), 1);
+			res.json({ value: true });
+		} else {
+			res.json({ value: false });
+		}
 	});
 
 	app.get('/api/server/:uuid/delete', (req, res) => {
@@ -153,12 +158,13 @@ if (import.meta.main) {
 			console.log(
 				`Arma Reforger Server with UUID ${req.params.uuid} is running: ${false}`,
 			);
-		} else {ars.isRunning().then((isRunning) => {
-				console.log(
-					`Arma Reforger Server with UUID ${req.params.uuid} is running: ${isRunning}`,
-				);
-				res.json({ value: isRunning });
-			});}
+		} else {
+			const isRunning = ars.isRunning();
+			console.log(
+				`Arma Reforger Server with UUID ${req.params.uuid} is running: ${isRunning}`,
+			);
+			res.json({ value: isRunning });
+		}
 	});
 
 	const server = app.listen(3000);
