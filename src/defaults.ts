@@ -57,5 +57,6 @@ export const defaultConfig = {
 export const defaultServer = {
     uuid: '',
     name: '',
+    isRunning: false,
     config: defaultConfig
 }

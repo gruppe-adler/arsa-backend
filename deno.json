@@ -2,8 +2,8 @@
 	"tasks": {
 		"dev": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts",
 		"prod": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net src/main.ts",
-		"docker": "docker buildx build -t arsa-backend .",
-		"docker-ars": "docker buildx build -t ars ./ars",
+		"docker": "docker build -t arsa-backend .",
+		"docker-ars": "docker build -t ars ./ars",
 		"docker-run": "docker run -d --rm -p 3000:3000 --name arsa-backend arsa-backend",
 		"lint": "deno lint",
 		"fmt": "deno fmt"
@@ -14,8 +14,10 @@
 		"@std/fs": "jsr:@std/fs@^1.0.4",
 		"@std/path": "jsr:@std/path@^1.0.6",
 		"@types/express": "npm:@types/express@^4.17.15",
+		"@types/express-ws": "npm:@types/express-ws@^3.0.5",
 		"cors": "npm:cors@^2.8.5",
 		"express": "npm:express@^4.18.2",
+		"express-ws": "npm:express-ws@^5.0.2",
 		"public-ip": "npm:public-ip@^7.0.1"
 	},
 	"lint": {

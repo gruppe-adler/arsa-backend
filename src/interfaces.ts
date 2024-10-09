@@ -1,6 +1,12 @@
+export interface ServerStatusUpdate {
+	uuid: string;
+	isRunning: boolean;
+}
+
 export interface Server {
 	uuid: string;
 	name: string;
+	isRunning: boolean;
 	config: ServerConfig;
 }
 

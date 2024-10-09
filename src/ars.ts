@@ -1,17 +1,27 @@
 import { join } from '@std/path';
 
-import type { ServerConfig } from './interfaces.ts';
-import { defaultConfig } from './defaults.ts';
+import type { Server, ServerConfig, ServerStatusUpdate } from './interfaces.ts';
 
 export class ArmaReforgerServer {
 	uuid: string;
 	arsContainerId: string;
+	isRunning: boolean;
+	messageQueue: ServerStatusUpdate[];
+	checkInterval: number;
 
 	constructor(uuid: string) {
 		if (!uuid) throw new Error('UUID is missing.');
 
 		this.uuid = uuid;
+		this.messageQueue = [];
+		this.arsContainerId = '';
+		this.isRunning = false;
+		this.checkInterval = 0;
 
+		this.start();
+	}
+
+	start(): void {
 		// read config to allow accessing values for command
 		const decoder = new TextDecoder("utf-8");
 		const fileContent = Deno.readFileSync(join(Deno.cwd(), 'servers', this.uuid, 'config.json'));
@@ -21,8 +31,6 @@ export class ArmaReforgerServer {
 		// it's important to NOT combine multiple arguments like '-p' and '2001' in one argument '-p 2001'
 		// otherwise it results in additional white spaces that break the call of docker with 
 		// '-p 2001: 2001' instead of '-p 2001:2001'
-		console.log(`Ports: ${config.bindPort}:${config.a2s.port}:${config.rcon.port}`);
-
 		const command = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
@@ -55,24 +63,47 @@ export class ArmaReforgerServer {
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
-
 		const output = new TextDecoder().decode(stdout);
-
-		this.arsContainerId = '';
 
 		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then the first 64 characters on stdout should be the container id
 		console.log(`docker run exit code: ${code}`);
 		if(code === 0) {
+			this.isRunning = true;
 			this.arsContainerId = output.substring(0, 64);
 			console.log(`SUCCESS: ${output}`);
 		} else {
+			this.isRunning = false;
 			const error = new TextDecoder().decode(stderr);
 			console.log(`ERROR: ${error}`);
 		}
+
+		this.setIsRunning(this.isRunning);
+
+		this.messageQueue.push({
+			uuid: this.uuid,
+			isRunning: this.isRunning
+		});
+
 		console.log(`new ars container id: ${this.arsContainerId}`);
 
 		console.log('Arma Reforger Server started.');
+
+		this.checkInterval = setInterval(() => {
+			if(this.isRunning) {
+				if(!this.checkIsRunning()) {
+					this.isRunning = false;
+					this.setIsRunning(false);
+					this.messageQueue.push({
+						uuid: this.uuid,
+						isRunning: this.isRunning
+					});
+					clearInterval(this.checkInterval);
+				}
+			}
+
+			console.log(this.checkIsRunning());
+		}, 1_000);
 	}
 
 	stop(): void {
@@ -85,25 +116,35 @@ export class ArmaReforgerServer {
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
-
 		const output = new TextDecoder().decode(stdout);
 
 		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then reset container id
 		console.log(`docker kill exit code: ${code}`);
 		if(code === 0 && output.substring(0, 64) === this.arsContainerId) {
+			this.isRunning = false;
 			this.arsContainerId = '';
 			console.log(`SUCCESS: ${output}`);
 		} else {
 			const error = new TextDecoder().decode(stderr);
 			console.log(`ERROR: ${error}`);
 		}
+
+		this.setIsRunning(this.isRunning);
+
+		this.messageQueue.push({
+			uuid: this.uuid,
+			isRunning: this.isRunning
+		});
+
 		console.log(`new ars container id: ${this.arsContainerId}`);
 
 		console.log('Arma Refoger Server stopped.');
+
+		clearInterval(this.checkInterval);
 	}
 
-	isRunning(): boolean {
+	checkIsRunning(): boolean {
 		const command = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
@@ -127,5 +168,16 @@ export class ArmaReforgerServer {
 			console.log(`ERROR: ${error}`);
 			return false;
 		}
+	}
+
+	setIsRunning(isRunning: boolean) {
+		const server:Server = JSON.parse(Deno.readTextFileSync(
+			`./servers/${this.uuid}/server.json`
+		));
+		server.isRunning = isRunning;
+		Deno.writeTextFileSync(
+			`./servers/${this.uuid}/server.json`,
+			JSON.stringify(server, null, 2),
+		);
 	}
 }

@@ -3,6 +3,8 @@ import { join } from '@std/path';
 
 // @deno-types="npm:@types/express@4.17.15"
 import express from 'npm:express@^4.17.15';
+// @deno-types="npm:@types/express-ws@^3.0.5"
+import expressWs from 'npm:express-ws@^5.0.2';
 import cors from 'npm:cors@2.8.5';
 import { publicIpv4 } from 'npm:public-ip@7.0.1';
 
@@ -20,6 +22,8 @@ if (import.meta.main) {
 	const started: ArmaReforgerServer[] = []; // started servers
 
 	const app = express();
+
+	const ws = expressWs(app);
 
 	app.use(cors());
 
@@ -159,12 +163,35 @@ if (import.meta.main) {
 				`Arma Reforger Server with UUID ${req.params.uuid} is running: ${false}`,
 			);
 		} else {
-			const isRunning = ars.isRunning();
 			console.log(
-				`Arma Reforger Server with UUID ${req.params.uuid} is running: ${isRunning}`,
+				`Arma Reforger Server with UUID ${req.params.uuid} is running: ${ars.isRunning}`,
 			);
-			res.json({ value: isRunning });
+			res.json({ value: ars.isRunning });
 		}
+	});
+
+	app.ws('/', (ws, req: Request) => {
+		ws.on('message', (msg: string) => {
+		  console.log(`WebSocket Message: ${msg}`);
+		  ws.send('pong');
+		});
+
+		ws.on('close', () => {
+			clearInterval(interval);
+			console.log('WebSocket closed.');
+		});
+		
+		const interval = setInterval(() => {
+			started.forEach(ars => {
+				while(ars.messageQueue.length > 0) {
+					const message = ars.messageQueue.splice(0, 1);
+					ws.send(JSON.stringify(message[0]));
+					console.log(JSON.stringify(message[0]));
+				}
+			});
+		}, 3_000);
+
+		console.log('WebSocket opened.');
 	});
 
 	const server = app.listen(3000);
@@ -175,6 +202,8 @@ if (import.meta.main) {
 		() => {
 			console.log('SIGINT!');
 			server.close();
+			//webSocketServer.shutdown().then(() => console.log('WebSocketServer shutdown done'));
+			Deno.exit(0);
 		},
 	);
 }

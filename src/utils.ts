@@ -18,9 +18,13 @@ export async function getServers() {
 export async function getLogs(uuid: string) {
 	const dir = join(Deno.cwd(), 'profiles', uuid, 'logs');
 	const logs: string[] = [];
-	for await (const dirEntry of Deno.readDir(dir)) {
-		logs.push(dirEntry.name);
-		console.log(dirEntry.name);
+	try {
+		for await (const dirEntry of Deno.readDir(dir)) {
+			logs.push(dirEntry.name);
+			console.log(dirEntry.name);
+		}
+	} catch(error) {
+		console.log('No log entries available');
 	}
 
 	return logs;
