@@ -10,31 +10,37 @@ import { publicIpv4 } from 'npm:public-ip@7.0.1';
 
 import { ArmaReforgerServer } from './ars.ts';
 import { getServer, getServers, getLogs, getLogFile } from './utils.ts';
+import type { Server } from './interfaces.ts';
 
 if (import.meta.main) {
-/* 	try {
-		Deno.mkdirSync('profiles')
-		Deno.mkdirSync('servers')
-	} catch (error) {
-		console.log(`Can't create folders. Error: ${error}`)
-	} */
-	
-	const started: ArmaReforgerServer[] = []; // started servers
+	// INIT: read all existing server.json and create ars instances
+	const arsList: ArmaReforgerServer[] = [];
+	const dir = join(Deno.cwd(), 'servers');
+	for await (const dirEntry of Deno.readDir(dir)) {
+		const fileContent = await Deno.readTextFile(
+			join(dir, dirEntry.name, 'server.json'),
+		);
+		const server = JSON.parse(fileContent) as Server;
+		arsList.push(new ArmaReforgerServer(server.uuid));
+		console.log(`INIT: Adding Arma Reforger Server with UUID: ${server.uuid}`);
+	}
 
+	/* ---------------------------------------- */
+
+	// INIT: configure and start express server with routes and websocket
 	const app = express();
-
-	const ws = expressWs(app);
-
+	const wsInstance = expressWs(app);
 	app.use(cors());
-
 	app.use(express.json()); // parsing JSON in req; result available in req.json
 
+	/* ---------------------------------------- */
+
+	// route for adding a new server incl. it's config
 	app.post('/api/add-server/', (req, res) => {
 		const server = req.body;
 		const uuid = crypto.randomUUID();
 		server.uuid = uuid;
 		console.log(`Adding Arma Reforger Server with UUID: ${uuid}`);
-		console.log(req.body);
 		Deno.mkdir(`servers/${uuid}`)
 			.then(() => {
 				Deno.writeTextFile(
@@ -48,9 +54,15 @@ if (import.meta.main) {
 					JSON.stringify(server.config, null, 2),
 				);
 			})
-			.then(() => res.json({ uuid }));
+			.then(() => {
+				arsList.push(new ArmaReforgerServer(uuid));
+				res.json({ uuid });
+			});
 	});
 
+	/* ---------------------------------------- */
+
+	// route for updating an existing server incl. it's config
 	app.post('/api/server/:uuid/update', (req, res) => {
 		const server = req.body;
 		console.log(
@@ -68,6 +80,9 @@ if (import.meta.main) {
 		res.json({ value: true });
 	});
 
+	/* ---------------------------------------- */
+
+	// route for getting names of existing log names (containing dates)
 	app.get('/api/server/:uuid/logs', (req, res) => {
 		const server = req.body;
 		console.log(
@@ -76,6 +91,9 @@ if (import.meta.main) {
 		getLogs(req.params.uuid).then((logs) => res.json(logs));
 	});
 
+	/* ---------------------------------------- */
+
+	// route for getting a specific log file
 	app.get('/api/server/:uuid/log/:log/:file', (req, res) => {
 		const server = req.body;
 		console.log(
@@ -84,6 +102,9 @@ if (import.meta.main) {
 		getLogFile(req.params.uuid, req.params.log, req.params.file).then((logFile) => res.json(logFile));
 	});
 
+	/* ---------------------------------------- */
+
+	// route for getting the public ip of the host
 	app.get('/api/get-public-ip', (req, res) => {
 		publicIpv4().then((ipv4) => {
 			console.log(`Getting Public IP of this Host: ${ipv4}`);
@@ -91,11 +112,17 @@ if (import.meta.main) {
 		});
 	});
 
+	/* ---------------------------------------- */
+
+	// route for getting all servers and their configs
 	app.get('/api/get-servers', (req, res) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
 		getServers().then((servers) => res.json(servers));
 	});
 
+	/* ---------------------------------------- */
+
+	// route for getting a specific server
 	app.get('/api/server/:uuid', (req, res) => {
 		console.log(
 			`Getting Arma Reforger Server with UUID: ${req.params.uuid}`,
@@ -105,31 +132,43 @@ if (import.meta.main) {
 		);
 	});
 
+	/* ---------------------------------------- */
+
+	// route for starting a specific server
 	app.get('/api/server/:uuid/start', (req, res) => {
 		console.log(
 			`Starting Arma Reforger Server with UUID: ${req.params.uuid}`,
 		);
-		// create ars instance and start it
-		const ars = new ArmaReforgerServer(req.params.uuid);
-		started.push(ars);
-		res.json({ value: true });
+		// starting ars instance
+		const ars = arsList.find((i) => i.uuid === req.params.uuid);
+		if(ars) {
+			ars.start();
+			res.json({ value: true });
+		} else {
+			throw new Error('Arma Reforger Server not found.');
+		}
 	});
 
+	/* ---------------------------------------- */
+
+	// route for stopping a specific server
 	app.get('/api/server/:uuid/stop', (req, res) => {
 		console.log(
 			`Stopping Arma Reforger Server with UUID: ${req.params.uuid}`,
 		);
 		// stop running ars instance
-		const ars = started.find((i) => i.uuid === req.params.uuid);
+		const ars = arsList.find((i) => i.uuid === req.params.uuid);
 		if(ars){
 			ars.stop();
-			started.splice(started.indexOf(ars), 1);
 			res.json({ value: true });
 		} else {
-			res.json({ value: false });
+			throw new Error('Arma Reforger Server not found.');
 		}
 	});
 
+	/* ---------------------------------------- */
+
+	// route for deleting a specific server
 	app.get('/api/server/:uuid/delete', (req, res) => {
 		console.log(
 			`Deleting Arma Reforger Server with UUID: ${req.params.uuid}`,
@@ -151,12 +190,20 @@ if (import.meta.main) {
 				throw error;
 			}
 		}
-		res.json({ value: true });
+		const ars = arsList.find((i) => i.uuid === req.params.uuid);
+		if (ars) {
+			arsList.splice(arsList.indexOf(ars), 1);
+			res.json({ value: true });			
+		} else {
+			throw new Error('Arma Reforger Server not found.');
+		}
 	});
 
+	/* ---------------------------------------- */
+
+	// route for starting the isRunning state of a specific server
 	app.get('/api/server/:uuid/isRunning', (req, res) => {
-		// create ars instance and start it
-		const ars = started.find((i) => i.uuid === req.params.uuid);
+		const ars = arsList.find((i) => i.uuid === req.params.uuid);
 		if (!ars) {
 			res.json({ value: false });
 			console.log(
@@ -170,31 +217,42 @@ if (import.meta.main) {
 		}
 	});
 
+	/* ---------------------------------------- */
+
+	// websocket configuration for server to client push notifications
 	app.ws('/', (ws, req: Request) => {
 		ws.on('message', (msg: string) => {
-		  console.log(`WebSocket Message: ${msg}`);
 		  ws.send('pong');
 		});
 
 		ws.on('close', () => {
-			clearInterval(interval);
 			console.log('WebSocket closed.');
 		});
-		
-		const interval = setInterval(() => {
-			started.forEach(ars => {
-				while(ars.messageQueue.length > 0) {
-					const message = ars.messageQueue.splice(0, 1);
-					ws.send(JSON.stringify(message[0]));
-					console.log(JSON.stringify(message[0]));
-				}
-			});
-		}, 3_000);
 
 		console.log('WebSocket opened.');
 	});
 
+	/* ---------------------------------------- */
+
 	const server = app.listen(3000);
+
+	/* ---------------------------------------- */
+
+	// broadcast all updates related to ars isRunning status to all clients
+	const interval = setInterval(() => {
+		arsList.forEach(ars => {
+			while(ars.messageQueue.length > 0) {
+				const message = ars.messageQueue.splice(0, 1)[0];
+				const clients = wsInstance.getWss().clients as WebSocket[];
+				clients.forEach(client => {
+					client.send(JSON.stringify(message))
+				});
+				console.log(`Sent message to all clients: ${JSON.stringify(message)}`);
+			}
+		});
+	}, 3_000);
+
+	/* ---------------------------------------- */
 
 	// things to do if <CTRL+C> is pressed
 	Deno.addSignalListener(
@@ -202,7 +260,6 @@ if (import.meta.main) {
 		() => {
 			console.log('SIGINT!');
 			server.close();
-			//webSocketServer.shutdown().then(() => console.log('WebSocketServer shutdown done'));
 			Deno.exit(0);
 		},
 	);
