@@ -29,21 +29,21 @@ export class ArmaReforgerServer {
 
 	start(): void {
 		// read config to allow accessing values for command
-		const decoder = new TextDecoder("utf-8");
+		const decoder = new TextDecoder('utf-8');
 		const fileContent = Deno.readFileSync(this.configPath);
 		const config: ServerConfig = JSON.parse(decoder.decode(fileContent));
-		
+
 		// starting Arma Reforger Server within a Docker Container
 		// it's important to NOT combine multiple arguments like '-p' and '2001' in one argument '-p 2001'
-		// otherwise it results in additional white spaces that break the call of docker with 
+		// otherwise it results in additional white spaces that break the call of docker with
 		// '-p 2001: 2001' instead of '-p 2001:2001'
 		const command = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
-				'run', 
+				'run',
 				'-d',
 				'--rm',
-				'--network=arsa_network', 
+				'--network=arsa_network',
 				'--hostname',
 				`${this.uuid}`,
 				'--mount',
@@ -64,8 +64,8 @@ export class ArmaReforgerServer {
 				'-profile',
 				`/ars/profiles/${this.uuid}`,
 				'-maxFPS',
-				'60'
-			]
+				'60',
+			],
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
@@ -74,7 +74,7 @@ export class ArmaReforgerServer {
 		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then the first 64 characters on stdout should be the container id
 		console.log(`docker run exit code: ${code}`);
-		if(code === 0) {
+		if (code === 0) {
 			this.isRunning = true;
 			this.arsContainerId = output.substring(0, 64);
 			console.log(`SUCCESS: ${output}`);
@@ -88,7 +88,7 @@ export class ArmaReforgerServer {
 
 		this.messageQueue.push({
 			uuid: this.uuid,
-			isRunning: this.isRunning
+			isRunning: this.isRunning,
 		});
 
 		console.log(`new ars container id: ${this.arsContainerId}`);
@@ -96,13 +96,13 @@ export class ArmaReforgerServer {
 		console.log('Arma Reforger Server started.');
 
 		this.checkInterval = setInterval(() => {
-			if(this.isRunning) {
-				if(!this.checkIsRunning()) {
+			if (this.isRunning) {
+				if (!this.checkIsRunning()) {
 					this.isRunning = false;
 					this.setIsRunning(false);
 					this.messageQueue.push({
 						uuid: this.uuid,
-						isRunning: this.isRunning
+						isRunning: this.isRunning,
 					});
 					clearInterval(this.checkInterval);
 				}
@@ -119,8 +119,8 @@ export class ArmaReforgerServer {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
 				'kill',
-				`${this.arsContainerId}`
-			]
+				`${this.arsContainerId}`,
+			],
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
@@ -129,7 +129,7 @@ export class ArmaReforgerServer {
 		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then reset container id
 		console.log(`docker kill exit code: ${code}`);
-		if(code === 0 && output.substring(0, 64) === this.arsContainerId) {
+		if (code === 0 && output.substring(0, 64) === this.arsContainerId) {
 			this.isRunning = false;
 			this.arsContainerId = '';
 			console.log(`SUCCESS: ${output}`);
@@ -142,7 +142,7 @@ export class ArmaReforgerServer {
 
 		this.messageQueue.push({
 			uuid: this.uuid,
-			isRunning: this.isRunning
+			isRunning: this.isRunning,
 		});
 
 		console.log(`new ars container id: ${this.arsContainerId}`);
@@ -162,15 +162,15 @@ export class ArmaReforgerServer {
 				'inspect',
 				'-f',
 				'{{.State.Running}}',
-				`${this.arsContainerId}`
-			]
+				`${this.arsContainerId}`,
+			],
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
 
 		const output = new TextDecoder().decode(stdout);
 
-		if(code === 0 && output.substring(0, 4) === 'true') {
+		if (code === 0 && output.substring(0, 4) === 'true') {
 			//console.log(`SUCCESS: ${output}`);
 			return true;
 		} else {
@@ -183,9 +183,13 @@ export class ArmaReforgerServer {
 	/* ---------------------------------------- */
 
 	setIsRunning(isRunning: boolean) {
-		const server:Server = JSON.parse(Deno.readTextFileSync(this.serverPath));
+		const server: Server = JSON.parse(
+			Deno.readTextFileSync(this.serverPath),
+		);
 		server.isRunning = isRunning;
-		Deno.writeTextFileSync(this.serverPath, JSON.stringify(server, null, 2),
+		Deno.writeTextFileSync(
+			this.serverPath,
+			JSON.stringify(server, null, 2),
 		);
 	}
 }

@@ -7,7 +7,7 @@ export interface Server {
 	uuid: string;
 	name: string;
 	isRunning: boolean;
-	config: ServerConfig;
+	config?: ServerConfig;
 }
 
 export interface ServerConfig {
