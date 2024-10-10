@@ -4,27 +4,33 @@ import type { Server, ServerConfig, ServerStatusUpdate } from './interfaces.ts';
 
 export class ArmaReforgerServer {
 	uuid: string;
+	serverPath: string;
+	configPath: string;
 	arsContainerId: string;
 	isRunning: boolean;
 	messageQueue: ServerStatusUpdate[];
 	checkInterval: number;
 
+	/* ---------------------------------------- */
+
 	constructor(uuid: string) {
 		if (!uuid) throw new Error('UUID is missing.');
 
 		this.uuid = uuid;
+		this.serverPath = join(Deno.cwd(), 'servers', this.uuid, 'server.json');
+		this.configPath = join(Deno.cwd(), 'servers', this.uuid, 'config.json');
 		this.messageQueue = [];
 		this.arsContainerId = '';
 		this.isRunning = false;
 		this.checkInterval = 0;
-
-		this.start();
 	}
+
+	/* ---------------------------------------- */
 
 	start(): void {
 		// read config to allow accessing values for command
 		const decoder = new TextDecoder("utf-8");
-		const fileContent = Deno.readFileSync(join(Deno.cwd(), 'servers', this.uuid, 'config.json'));
+		const fileContent = Deno.readFileSync(this.configPath);
 		const config: ServerConfig = JSON.parse(decoder.decode(fileContent));
 		
 		// starting Arma Reforger Server within a Docker Container
@@ -106,6 +112,8 @@ export class ArmaReforgerServer {
 		}, 1_000);
 	}
 
+	/* ---------------------------------------- */
+
 	stop(): void {
 		const command = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
@@ -144,6 +152,8 @@ export class ArmaReforgerServer {
 		clearInterval(this.checkInterval);
 	}
 
+	/* ---------------------------------------- */
+
 	checkIsRunning(): boolean {
 		const command = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
@@ -170,14 +180,12 @@ export class ArmaReforgerServer {
 		}
 	}
 
+	/* ---------------------------------------- */
+
 	setIsRunning(isRunning: boolean) {
-		const server:Server = JSON.parse(Deno.readTextFileSync(
-			`./servers/${this.uuid}/server.json`
-		));
+		const server:Server = JSON.parse(Deno.readTextFileSync(this.serverPath));
 		server.isRunning = isRunning;
-		Deno.writeTextFileSync(
-			`./servers/${this.uuid}/server.json`,
-			JSON.stringify(server, null, 2),
+		Deno.writeTextFileSync(this.serverPath, JSON.stringify(server, null, 2),
 		);
 	}
 }
