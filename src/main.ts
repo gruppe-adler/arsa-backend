@@ -27,6 +27,8 @@ if (import.meta.main) {
 		);
 	}
 
+	const publicIp = await publicIpv4();
+
 	/* ---------------------------------------- */
 
 	// INIT: configure and start express server with routes and websocket
@@ -113,10 +115,8 @@ if (import.meta.main) {
 
 	// route for getting the public ip of the host
 	app.get('/api/get-public-ip', (req, res) => {
-		publicIpv4().then((ipv4) => {
-			console.log(`Getting Public IP of this Host: ${ipv4}`);
-			res.json({ ipv4 });
-		});
+		console.log(`Getting Public IP of this Host: ${publicIp}`);
+		res.json({ ipv4: publicIp });
 	});
 
 	/* ---------------------------------------- */
