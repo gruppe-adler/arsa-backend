@@ -7,11 +7,14 @@ USER root
 # install Arma Reforger Server with steamcmd to default location
 RUN steamcmd +login anonymous +app_update 1874900 validate +quit
 
+# running as ubuntu prevents Arma Reforger Server from loading ./battleye/BEServer_x64.so'
+# that's why the next two commands are commented out and the server runs as root now
+
 # create group 'arsa'(gid 1337) and add user 'ubuntu' to that group
-RUN groupadd --gid 1337 arsa && usermod -a -G arsa ubuntu
+#RUN groupadd --gid 1337 arsa && usermod -a -G arsa ubuntu
 
 # switch to unprivileged user 'ubuntu'
-USER ubuntu
+#USER ubuntu
 
 # set working directory
 WORKDIR "/root/.local/share/Steam/steamapps/common/Arma Reforger Server/"
