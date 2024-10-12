@@ -38,7 +38,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for adding a new server incl. it's config
-	app.post('/api/add-server', async c => {
+	app.post('/api/add-server', async (c) => {
 		const server: Server = await c.req.json();
 		const uuid = crypto.randomUUID();
 		server.uuid = uuid;
@@ -66,7 +66,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for updating an existing server incl. it's config
-	app.post('/api/server/:uuid/update', async c => {
+	app.post('/api/server/:uuid/update', async (c) => {
 		const server: Server = await c.req.json();
 		const config = server.config;
 		delete server.config;
@@ -89,7 +89,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for getting names of existing log names (containing dates)
-	app.get('/api/server/:uuid/logs', async c => {
+	app.get('/api/server/:uuid/logs', async (c) => {
 		const uuid = c.req.param('uuid');
 		console.log(
 			`Getting Log Events for Arma Reforger Server with UUID: ${uuid}`,
@@ -101,7 +101,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for getting a specific log file
-	app.get('/api/server/:uuid/log/:log/:file', async c => {
+	app.get('/api/server/:uuid/log/:log/:file', async (c) => {
 		const { uuid, log, file } = c.req.param();
 		console.log(
 			`Getting Log File ${log}/${file} for Arma Reforger Server with UUID: ${uuid}`,
@@ -113,7 +113,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for getting the public ip of the host
-	app.get('/api/get-public-ip', c => {
+	app.get('/api/get-public-ip', (c) => {
 		console.log(`Getting Public IP of this Host: ${publicIp}`);
 		return c.json({ ipv4: publicIp });
 	});
@@ -121,7 +121,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for getting all servers and their configs
-	app.get('/api/get-servers', async c => {
+	app.get('/api/get-servers', async (c) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
 		const servers: Server[] = await getServers();
 		return c.json(servers);
@@ -130,7 +130,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for getting a specific server
-	app.get('/api/server/:uuid', async c => {
+	app.get('/api/server/:uuid', async (c) => {
 		const uuid = c.req.param('uuid');
 		console.log(
 			`Getting Arma Reforger Server with UUID: ${uuid}`,
@@ -142,7 +142,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for starting a specific server
-	app.get('/api/server/:uuid/start', c => {
+	app.get('/api/server/:uuid/start', (c) => {
 		const uuid = c.req.param('uuid');
 		console.log(
 			`Starting Arma Reforger Server with UUID: ${uuid}`,
@@ -160,7 +160,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for stopping a specific server
-	app.get('/api/server/:uuid/stop', c => {
+	app.get('/api/server/:uuid/stop', (c) => {
 		const uuid = c.req.param('uuid');
 		console.log(
 			`Stopping Arma Reforger Server with UUID: ${uuid}`,
@@ -178,7 +178,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for deleting a specific server
-	app.get('/api/server/:uuid/delete', async c => {
+	app.get('/api/server/:uuid/delete', async (c) => {
 		const uuid = c.req.param('uuid');
 		console.log(
 			`Deleting Arma Reforger Server with UUID: ${uuid}`,
@@ -212,7 +212,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for starting the isRunning state of a specific server
-	app.get('/api/server/:uuid/isRunning', c => {
+	app.get('/api/server/:uuid/isRunning', (c) => {
 		const uuid = c.req.param('uuid');
 		const ars = arsList.find((i) => i.uuid === uuid);
 		if (!ars) {
@@ -233,7 +233,9 @@ if (import.meta.main) {
 	const wsClients: WSContext[] = [];
 
 	// websocket configuration for server to client push notifications
-	app.get('/ws', upgradeWebSocket(c => {
+	app.get(
+		'/ws',
+		upgradeWebSocket((c) => {
 			return {
 				onMessage(event, ws) {
 					if (event.data === 'ping') {
@@ -249,8 +251,8 @@ if (import.meta.main) {
 				onClose: () => {
 					console.log('WebSocket closed.');
 				},
-			}
-		})
+			};
+		}),
 	);
 
 	/* ---------------------------------------- */
