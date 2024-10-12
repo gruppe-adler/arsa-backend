@@ -13,12 +13,12 @@
 		"@std/dotenv": "jsr:@std/dotenv@^0.225.2",
 		"@std/fs": "jsr:@std/fs@^1.0.4",
 		"@std/path": "jsr:@std/path@^1.0.6",
-		"@types/express": "npm:@types/express@^4.17.15",
-		"@types/express-ws": "npm:@types/express-ws@^3.0.5",
-		"cors": "npm:cors@^2.8.5",
-		"express": "npm:express@^4.18.2",
-		"express-ws": "npm:express-ws@^5.0.2",
+		"hono": "jsr:@hono/hono@^4.6.4",
 		"public-ip": "npm:public-ip@^7.0.1"
+	},
+	"compilerOptions": {
+		"jsx": "precompile",
+		"jsxImportSource": "hono/jsx"
 	},
 	"lint": {
 		"include": ["src/"],
