@@ -69,7 +69,7 @@ export class ArmaReforgerServer {
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
-		const output = new TextDecoder().decode(stdout);
+		const output = (new TextDecoder().decode(stdout)).slice(0, -1);
 
 		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then the first 64 characters on stdout should be the container id
@@ -80,7 +80,7 @@ export class ArmaReforgerServer {
 			console.log(`SUCCESS: ${output}`);
 		} else {
 			this.isRunning = false;
-			const error = new TextDecoder().decode(stderr);
+			const error = (new TextDecoder().decode(stderr)).slice(0, -1);
 			console.log(`ERROR: ${error}`);
 		}
 
@@ -107,8 +107,6 @@ export class ArmaReforgerServer {
 					clearInterval(this.checkInterval);
 				}
 			}
-
-			console.log(this.checkIsRunning());
 		}, 1_000);
 	}
 
@@ -124,7 +122,7 @@ export class ArmaReforgerServer {
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
-		const output = new TextDecoder().decode(stdout);
+		const output = (new TextDecoder().decode(stdout)).slice(0, -1);
 
 		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then reset container id
@@ -134,7 +132,7 @@ export class ArmaReforgerServer {
 			this.arsContainerId = '';
 			console.log(`SUCCESS: ${output}`);
 		} else {
-			const error = new TextDecoder().decode(stderr);
+			const error = (new TextDecoder().decode(stderr)).slice(0, -1);
 			console.log(`ERROR: ${error}`);
 		}
 
@@ -168,14 +166,14 @@ export class ArmaReforgerServer {
 
 		const { code, stdout, stderr } = command.outputSync();
 
-		const output = new TextDecoder().decode(stdout);
+		const output = (new TextDecoder().decode(stdout)).slice(0, -1);
 
 		if (code === 0 && output.substring(0, 4) === 'true') {
 			//console.log(`SUCCESS: ${output}`);
 			return true;
 		} else {
-			const error = new TextDecoder().decode(stderr);
-			console.log(`ERROR: ${error}`);
+			const error = (new TextDecoder().decode(stderr)).slice(0, -1);
+			console.log(`ERROR(RETURN CODE ${code}): ${error}`);
 			return false;
 		}
 	}
