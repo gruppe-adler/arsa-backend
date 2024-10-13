@@ -263,13 +263,33 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
+	/* 	WebSocket.CONNECTING (0)
+	Socket has been created. The connection is not yet open.
+
+	WebSocket.OPEN (1)
+	The connection is open and ready to communicate.
+
+	WebSocket.CLOSING (2)
+	The connection is in the process of closing.
+
+	WebSocket.CLOSED (3)
+	The connection is closed or couldn't be opened. */
+
 	// broadcast all updates related to ars isRunning status to all clients
 	const interval = setInterval(() => {
 		arsList.forEach((ars) => {
 			while (ars.messageQueue.length > 0) {
 				const message = ars.messageQueue.splice(0, 1)[0];
 				wsClients.forEach((wsClient) => {
-					wsClient.send(JSON.stringify(message));
+					while (wsClient.readyState === 0) {
+						// itentionally do nothing
+					}
+					if (wsClient.readyState === 1) {
+						wsClient.send(JSON.stringify(message));
+					} else {
+						wsClient.close();
+						console.log('Closed non ready websocket.');
+					}
 				});
 				console.log(
 					`Sent message to all clients: ${JSON.stringify(message)}`,
