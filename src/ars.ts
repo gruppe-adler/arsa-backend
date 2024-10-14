@@ -33,6 +33,25 @@ export class ArmaReforgerServer {
 		const fileContent = Deno.readFileSync(this.configPath);
 		const config: ServerConfig = JSON.parse(decoder.decode(fileContent));
 
+		const environment = Deno.env.get('ENVIRONMENT') || 'Production';
+		let network, volumeSourceProfiles, volumeSourceServers, mountType;
+		if (environment === 'Development') {
+			network = 'default';
+			volumeSourceProfiles = join(Deno.cwd(), '/profiles');
+			volumeSourceServers = join(Deno.cwd(), './servers');
+			mountType = 'bind';
+		} else if (environment === 'Production') {
+			network = 'arsa_network';
+			volumeSourceProfiles = 'arsa-profiles';
+			volumeSourceServers = 'arsa-servers';
+			mountType = 'volume';
+		} else {
+			network = 'arsa_network';
+			volumeSourceProfiles = 'arsa-profiles';
+			volumeSourceServers = 'arsa-servers';
+			mountType = 'volume';
+		}
+
 		// starting Arma Reforger Server within a Docker Container
 		// it's important to NOT combine multiple arguments like '-p' and '2001' in one argument '-p 2001'
 		// otherwise it results in additional white spaces that break the call of docker with
@@ -43,13 +62,13 @@ export class ArmaReforgerServer {
 				'run',
 				'-d',
 				'--rm',
-				'--network=arsa_network',
+				`--network=${network}`,
 				'--hostname',
 				`${this.uuid}`,
 				'--mount',
-				'type=volume,source=arsa-profiles,target=/ars/profiles',
+				`type=${mountType},source=${volumeSourceProfiles},target=/ars/profiles`,
 				'--mount',
-				'type=volume,source=arsa-servers,target=/ars/servers,readonly',
+				`type=${mountType},source=${volumeSourceServers},target=/ars/servers,readonly`,
 				'-p',
 				`${config.bindPort}:${config.bindPort}/udp`,
 				'-p',

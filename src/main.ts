@@ -1,4 +1,3 @@
-import '@std/dotenv/load'; // Automatically load environment variables from a `.env` file
 import { join } from '@std/path';
 import { Hono } from 'hono';
 import { showRoutes } from 'hono/dev';
