@@ -8,10 +8,15 @@ import { type WSContext } from 'hono/ws';
 import { publicIpv4 } from 'npm:public-ip@7.0.1';
 
 import { ArmaReforgerServer } from './ars.ts';
-import { getLogFile, getLogs, getServer, getServers } from './utils.ts';
+import { createSharedFolders, getLogFile, getLogs, getServer, getServers } from './utils.ts';
 import type { Server } from './interfaces.ts';
 
 if (import.meta.main) {
+	const environment = Deno.env.get('ENVIRONMENT') || 'Production';
+	if (environment === 'Development') {
+		await createSharedFolders();
+	}
+
 	// INIT: read all existing server.json and create ars instances
 	const arsList: ArmaReforgerServer[] = [];
 	const dir = join(Deno.cwd(), 'servers');

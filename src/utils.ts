@@ -1,6 +1,19 @@
 import { join } from '@std/path';
 import { Server } from './interfaces.ts';
 
+export async function createSharedFolders() {
+	try {
+		await Deno.mkdir(join(Deno.cwd(), 'profiles'), { recursive: true });
+	} catch (error) {
+		console.log(error);
+	}
+	try {
+		await Deno.mkdir(join(Deno.cwd(), 'servers'), { recursive: true });
+	} catch (error) {
+		console.log(error);
+	}
+}
+
 export async function getServers() {
 	const dir = join(Deno.cwd(), 'servers');
 	const servers: Server[] = [];
