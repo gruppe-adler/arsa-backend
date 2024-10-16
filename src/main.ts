@@ -10,8 +10,10 @@ import { publicIpv4 } from 'npm:public-ip@7.0.1';
 import { ArmaReforgerServer } from './ars.ts';
 import { createSharedFolders, getLogFile, getLogs, getServer, getServers } from './utils.ts';
 import type { Server } from './interfaces.ts';
+import { addToKnownPlayers, getKnownPlayers, getPlayersFromLog } from './players.ts';
 
 if (import.meta.main) {
+	// create needed folders if in development environment
 	const environment = Deno.env.get('ENVIRONMENT') || 'Production';
 	if (environment === 'Development') {
 		await createSharedFolders();
@@ -112,6 +114,35 @@ if (import.meta.main) {
 		);
 		const logFile = await getLogFile(uuid, log, file);
 		return c.json(logFile);
+	});
+
+	/* ---------------------------------------- */
+
+	// route for getting all players from a specific log file
+	app.get('/api/server/:uuid/log-players/:log', async (c) => {
+		const { uuid, log } = c.req.param();
+		console.log(
+			`Getting Players from Log ${log} for Arma Reforger Server with UUID: ${uuid}`,
+		);
+
+		const newPlayers = await getPlayersFromLog(join(Deno.cwd(), 'profiles', uuid, 'logs', log, 'console.log'));
+		await addToKnownPlayers(uuid, newPlayers);
+
+		return c.json(newPlayers);
+	});
+
+	/* ---------------------------------------- */
+
+	// route for getting all known players
+	app.get('/api/server/:uuid/known-players', async (c) => {
+		const { uuid } = c.req.param();
+		console.log(
+			`Getting known Players for Arma Reforger Server with UUID: ${uuid}`,
+		);
+
+		const knownPlayers = await getKnownPlayers(uuid);
+
+		return c.json(knownPlayers);
 	});
 
 	/* ---------------------------------------- */
