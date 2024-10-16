@@ -13,7 +13,7 @@ export async function getPlayersFromLog(logFilePath: string): Promise<playerIden
         const logArray = log.split('\n');
     
         logArray.forEach((line) => {
-            const itentityIdRegEx = new RegExp('IdentityId=([0-9a-f-]{36})');
+            const itentityIdRegEx = new RegExp('IdentityId=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})');
             const nameRegEx = new RegExp('Name=(.*),');
             const identityIdResult = itentityIdRegEx.exec(line);
             const nameResult = nameRegEx.exec(line);
