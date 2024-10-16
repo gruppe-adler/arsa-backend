@@ -70,7 +70,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for updating an existing server incl. it's config
-	app.post('/api/server/:uuid/update', async (c) => {
+	app.put('/api/server/:uuid', async (c) => {
 		const server: Server = await c.req.json();
 		const config = server.config;
 		delete server.config;
@@ -182,7 +182,7 @@ if (import.meta.main) {
 	/* ---------------------------------------- */
 
 	// route for deleting a specific server
-	app.get('/api/server/:uuid/delete', async (c) => {
+	app.delete('/api/server/:uuid', async (c) => {
 		const uuid = c.req.param('uuid');
 		console.log(
 			`Deleting Arma Reforger Server with UUID: ${uuid}`,
