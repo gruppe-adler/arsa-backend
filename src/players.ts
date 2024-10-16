@@ -1,12 +1,8 @@
 import { join } from '@std/path';
+import type { PlayerIdentityId } from './interfaces.ts';
 
-interface playerIdentityId {
-    name: string,
-    identityId: string
-}
-
-export async function getPlayersFromLog(logFilePath: string): Promise<playerIdentityId[]> {
-    const playerIdentityIds: playerIdentityId[] = [];
+export async function getPlayersFromLog(logFilePath: string): Promise<PlayerIdentityId[]> {
+    const playerIdentityIds: PlayerIdentityId[] = [];
 
     try {
         const log = await Deno.readTextFile(logFilePath);
@@ -32,10 +28,10 @@ export async function getPlayersFromLog(logFilePath: string): Promise<playerIden
     return playerIdentityIds;
 }
 
-export async function addToKnownPlayers(uuid: string, newPlayers: playerIdentityId[]): Promise<void> {
+export async function addToKnownPlayers(uuid: string, newPlayers: PlayerIdentityId[]): Promise<void> {
     const knownPlayersFilePath = join(Deno.cwd(), 'servers', uuid, 'known-players.json');
 
-    let players: playerIdentityId[] = [];
+    let players: PlayerIdentityId[] = [];
 
     try {
         const fileContent = await Deno.readTextFile(knownPlayersFilePath);
@@ -53,10 +49,10 @@ export async function addToKnownPlayers(uuid: string, newPlayers: playerIdentity
     await Deno.writeTextFile(knownPlayersFilePath, JSON.stringify(players, null, 2));
 }
 
-export async function getKnownPlayers(uuid: string): Promise<playerIdentityId[]> {
+export async function getKnownPlayers(uuid: string): Promise<PlayerIdentityId[]> {
     const knownPlayersFilePath = join(Deno.cwd(), 'servers', uuid, 'known-players.json');
 
-    let knownPlayers: playerIdentityId[] = [];
+    let knownPlayers: PlayerIdentityId[] = [];
 
     try {
         const fileContent = await Deno.readTextFile(knownPlayersFilePath);
