@@ -37,8 +37,8 @@ export class ArmaReforgerServer {
 		let network, volumeSourceProfiles, volumeSourceServers, mountType;
 		if (environment === 'Development') {
 			network = 'default';
-			volumeSourceProfiles = join(Deno.cwd(), '/profiles');
-			volumeSourceServers = join(Deno.cwd(), './servers');
+			volumeSourceProfiles = join(Deno.cwd(), 'profiles');
+			volumeSourceServers = join(Deno.cwd(), 'servers');
 			mountType = 'bind';
 		} else if (environment === 'Production') {
 			network = 'arsa_network';

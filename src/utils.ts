@@ -1,82 +1,56 @@
 import { join } from '@std/path';
-import { Server } from './interfaces.ts';
 
 export async function createSharedFolders() {
+	const serversDir = join(Deno.cwd(), 'servers');
+	const profilesDir = join(Deno.cwd(), 'profiles');
 	try {
-		await Deno.mkdir(join(Deno.cwd(), 'profiles'), { recursive: true });
+		await Deno.mkdir(profilesDir, { recursive: true });
 	} catch (error) {
-		console.log(error);
-	}
-	try {
-		await Deno.mkdir(join(Deno.cwd(), 'servers'), { recursive: true });
-	} catch (error) {
-		console.log(error);
-	}
-}
-
-export async function getServers() {
-	const dir = join(Deno.cwd(), 'servers');
-	const servers: Server[] = [];
-	for await (const dirEntry of Deno.readDir(dir)) {
-		const serverFileContent = await Deno.readTextFile(
-			join(dir, dirEntry.name, 'server.json'),
-		);
-		const server: Server = JSON.parse(serverFileContent);
-		const configFileContent = await Deno.readTextFile(
-			join(dir, dirEntry.name, 'config.json'),
-		);
-		const config = JSON.parse(configFileContent);
-		server.config = config;
-		servers.push(server);
-		console.log(dirEntry.name);
-	}
-
-	return servers;
-}
-
-export async function getServer(uuid: string) {
-	const dir = join(Deno.cwd(), 'servers');
-	let server: Server = {} as Server;
-	for await (const dirEntry of Deno.readDir(dir)) {
-		if (dirEntry.name === uuid) {
-			const serverFileContent = await Deno.readTextFile(
-				join(dir, dirEntry.name, 'server.json'),
-			);
-			server = JSON.parse(serverFileContent);
-
-			const configFileContent = await Deno.readTextFile(
-				join(dir, dirEntry.name, 'config.json'),
-			);
-			const config = JSON.parse(configFileContent);
-			server.config = config;
-
-			console.log(dirEntry.name);
-
-			break;
+		if (error instanceof Deno.errors.AlreadyExists) {
+			console.log(`Directory ${profilesDir} already exists.`);
+		} else {
+			throw error;
 		}
 	}
-
-	return server;
-}
-
-export async function getLogs(uuid: string) {
-	const dir = join(Deno.cwd(), 'profiles', uuid, 'logs');
-	const logs: string[] = [];
 	try {
-		for await (const dirEntry of Deno.readDir(dir)) {
-			logs.push(dirEntry.name);
-			console.log(dirEntry.name);
-		}
+		await Deno.mkdir(serversDir, { recursive: true });
 	} catch (error) {
-		console.log('No log entries available');
+		if (error instanceof Deno.errors.AlreadyExists) {
+			console.log(`Directory ${serversDir} already exists.`);
+		} else {
+			throw error;
+		}
 	}
-
-	return logs;
 }
 
-export async function getLogFile(uuid: string, log: string, file: string) {
-	const filePath = join(Deno.cwd(), 'profiles', uuid, 'logs', log, file);
-	const fileContent = await Deno.readTextFile(filePath);
+export async function fileExists(filename: string): Promise<boolean> {
+	try {
+		const fileInfo = await Deno.stat(filename);
+		// successful, file or directory must exist
+		return fileInfo.isFile;
+	} catch (error) {
+		if (error instanceof Deno.errors.NotFound) {
+			// file or directory does not exist
+			return false;
+		} else {
+			// unexpected error, maybe permissions, pass it along
+			throw error;
+		}
+	}
+}
 
-	return fileContent;
+export async function directoryExists(filename: string): Promise<boolean> {
+	try {
+		const fileInfo = await Deno.stat(filename);
+		// successful, file or directory must exist
+		return fileInfo.isDirectory;
+	} catch (error) {
+		if (error instanceof Deno.errors.NotFound) {
+			// file or directory does not exist
+			return false;
+		} else {
+			// unexpected error, maybe permissions, pass it along
+			throw error;
+		}
+	}
 }

@@ -1,4 +1,6 @@
 import { join } from '@std/path';
+import * as uuidLib from '@std/uuid';
+
 import { Hono } from 'hono';
 import { showRoutes } from 'hono/dev';
 import { cors } from 'hono/cors';
@@ -8,9 +10,15 @@ import { type WSContext } from 'hono/ws';
 import { publicIpv4 } from 'npm:public-ip@7.0.1';
 
 import { ArmaReforgerServer } from './ars.ts';
-import { createSharedFolders, getLogFile, getLogs, getServer, getServers } from './utils.ts';
-import type { Server } from './interfaces.ts';
-import { addToKnownPlayers, getKnownPlayers, getPlayersFromLog } from './players.ts';
+import { createSharedFolders, directoryExists, fileExists } from './utils.ts';
+import { getServer, getServers } from './servers.ts';
+import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
+import type { Server, ServerConfig } from './interfaces.ts';
+import {
+	addToKnownPlayers,
+	getKnownPlayers,
+	getPlayersFromLog,
+} from './players.ts';
 
 if (import.meta.main) {
 	// create needed folders if in development environment
@@ -22,15 +30,20 @@ if (import.meta.main) {
 	// INIT: read all existing server.json and create ars instances
 	const arsList: ArmaReforgerServer[] = [];
 	const dir = join(Deno.cwd(), 'servers');
-	for await (const dirEntry of Deno.readDir(dir)) {
-		const fileContent = await Deno.readTextFile(
-			join(dir, dirEntry.name, 'server.json'),
-		);
-		const server = JSON.parse(fileContent) as Server;
-		arsList.push(new ArmaReforgerServer(server.uuid));
-		console.log(
-			`INIT: Adding Arma Reforger Server with UUID: ${server.uuid}`,
-		);
+
+	try {
+		for await (const dirEntry of Deno.readDir(dir)) {
+			const fileContent = await Deno.readTextFile(
+				join(dir, dirEntry.name, 'server.json'),
+			);
+			const server = JSON.parse(fileContent) as Server;
+			arsList.push(new ArmaReforgerServer(server.uuid));
+			console.log(
+				`INIT: Adding Arma Reforger Server with UUID: ${server.uuid}`,
+			);
+		}
+	} catch (error) {
+		console.log(error);
 	}
 
 	const publicIp = await publicIpv4();
@@ -50,19 +63,26 @@ if (import.meta.main) {
 		server.uuid = uuid;
 		const config = server.config;
 		delete server.config;
-		Deno.mkdir(`servers/${uuid}`)
-			.then(() => {
-				return Deno.writeTextFile(
-					`./servers/${uuid}/server.json`,
-					JSON.stringify(server, null, 2),
-				);
-			})
-			.then(() => {
-				return Deno.writeTextFile(
-					`./servers/${uuid}/config.json`,
-					JSON.stringify(config, null, 2),
-				);
-			});
+
+		const serversDir = join(Deno.cwd(), 'servers', uuid);
+		if (await directoryExists(serversDir)) return c.json({}, 500);
+
+		const serverPath = join(serversDir, 'server.json');
+		const configPath = join(serversDir, 'config.json');
+
+		try {
+			await Deno.mkdir(serversDir);
+			await Deno.writeTextFile(
+				serverPath,
+				JSON.stringify(server, null, 2),
+			);
+			await Deno.writeTextFile(
+				configPath,
+				JSON.stringify(config, null, 2),
+			);
+		} catch (error) {
+			console.log(error);
+		}
 
 		arsList.push(new ArmaReforgerServer(uuid));
 		console.log(`Added Arma Reforger Server with UUID: ${uuid}`);
@@ -73,18 +93,22 @@ if (import.meta.main) {
 
 	// route for updating an existing server incl. it's config
 	app.put('/api/server/:uuid', async (c) => {
-		const server: Server = await c.req.json();
-		const config = server.config;
-		delete server.config;
 		const uuid = c.req.param('uuid');
-		Deno.writeTextFile(
-			`./servers/${uuid}/server.json`,
-			JSON.stringify(server, null, 2),
-		);
-		Deno.writeTextFile(
-			`./servers/${uuid}/config.json`,
-			JSON.stringify(config, null, 2),
-		);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
+
+		const serversDir = join(Deno.cwd(), 'servers', uuid);
+		if (!await directoryExists(serversDir)) return c.json({ value: false }, 404);
+
+		const server: Server = await c.req.json();
+		if (!server.config) return c.json({ value: false }, 500);
+
+		const config: ServerConfig = server.config;
+		delete server.config;
+
+		const serverPath = join(serversDir, 'server.json');
+		const configPath = join(serversDir, 'config.json');
+		Deno.writeTextFile(serverPath, JSON.stringify(server, null, 2));
+		Deno.writeTextFile(configPath, JSON.stringify(config, null, 2));
 
 		console.log(
 			`Updated Arma Reforger Server with UUID: ${uuid}`,
@@ -97,10 +121,13 @@ if (import.meta.main) {
 	// route for getting names of existing log names (containing dates)
 	app.get('/api/server/:uuid/logs', async (c) => {
 		const uuid = c.req.param('uuid');
+		if (!uuidLib.validate(uuid)) return c.json([], 404);
+
+		const logs = await getLogs(uuid);
+
 		console.log(
 			`Getting Log Events for Arma Reforger Server with UUID: ${uuid}`,
 		);
-		const logs = await getLogs(uuid);
 		return c.json(logs);
 	});
 
@@ -109,11 +136,17 @@ if (import.meta.main) {
 	// route for getting a specific log file
 	app.get('/api/server/:uuid/log/:log/:file', async (c) => {
 		const { uuid, log, file } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.text('', 404);
+		if (!isValidLogDirName(log)) return c.text('', 404);
+		if (!['console.log', 'error.log', 'script.log'].includes(file)) {
+			return c.text('', 404);
+		}
+
 		console.log(
 			`Getting Log File ${log}/${file} for Arma Reforger Server with UUID: ${uuid}`,
 		);
 		const logFile = await getLogFile(uuid, log, file);
-		return c.json(logFile);
+		return c.text(logFile);
 	});
 
 	/* ---------------------------------------- */
@@ -121,11 +154,24 @@ if (import.meta.main) {
 	// route for getting all players from a specific log file
 	app.get('/api/server/:uuid/log-players/:log', async (c) => {
 		const { uuid, log } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.json([], 404);
+		if (!isValidLogDirName(log)) return c.json([], 404);
+
+		const logPath = join(
+			Deno.cwd(),
+			'profiles',
+			uuid,
+			'logs',
+			log,
+			'console.log',
+		);
+		if (!await fileExists(logPath)) return c.json([], 404);
+
 		console.log(
 			`Getting Players from Log ${log} for Arma Reforger Server with UUID: ${uuid}`,
 		);
 
-		const newPlayers = await getPlayersFromLog(join(Deno.cwd(), 'profiles', uuid, 'logs', log, 'console.log'));
+		const newPlayers = await getPlayersFromLog(logPath);
 		await addToKnownPlayers(uuid, newPlayers);
 
 		return c.json(newPlayers);
@@ -136,6 +182,8 @@ if (import.meta.main) {
 	// route for getting all known players
 	app.get('/api/server/:uuid/known-players', async (c) => {
 		const { uuid } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.json([], 404);
+
 		console.log(
 			`Getting known Players for Arma Reforger Server with UUID: ${uuid}`,
 		);
@@ -158,6 +206,7 @@ if (import.meta.main) {
 	// route for getting all servers and their configs
 	app.get('/api/get-servers', async (c) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
+		
 		const servers: Server[] = await getServers();
 		return c.json(servers);
 	});
@@ -167,10 +216,14 @@ if (import.meta.main) {
 	// route for getting a specific server
 	app.get('/api/server/:uuid', async (c) => {
 		const uuid = c.req.param('uuid');
+		if (!uuidLib.validate(uuid)) return c.json({}, 404);
+
 		console.log(
 			`Getting Arma Reforger Server with UUID: ${uuid}`,
 		);
-		const server: Server = await getServer(uuid);
+
+		const server = await getServer(uuid);
+		if (server === null) { c.json({}), 404 }
 		return c.json(server);
 	});
 
@@ -179,16 +232,20 @@ if (import.meta.main) {
 	// route for starting a specific server
 	app.get('/api/server/:uuid/start', (c) => {
 		const uuid = c.req.param('uuid');
+		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+
 		console.log(
 			`Starting Arma Reforger Server with UUID: ${uuid}`,
 		);
+
 		// starting ars instance
 		const ars = arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			ars.start();
 			return c.json({ value: true });
 		} else {
-			throw new Error('Arma Reforger Server not found.');
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
 		}
 	});
 
@@ -197,16 +254,20 @@ if (import.meta.main) {
 	// route for stopping a specific server
 	app.get('/api/server/:uuid/stop', (c) => {
 		const uuid = c.req.param('uuid');
+		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+
 		console.log(
 			`Stopping Arma Reforger Server with UUID: ${uuid}`,
 		);
+
 		// stop running ars instance
 		const ars = arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			ars.stop();
 			return c.json({ value: true });
 		} else {
-			throw new Error('Arma Reforger Server not found.');
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
 		}
 	});
 
@@ -215,9 +276,12 @@ if (import.meta.main) {
 	// route for deleting a specific server
 	app.delete('/api/server/:uuid', async (c) => {
 		const uuid = c.req.param('uuid');
+		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+
 		console.log(
 			`Deleting Arma Reforger Server with UUID: ${uuid}`,
 		);
+
 		// delete server and profile
 		const profilePath = join(Deno.cwd(), 'profiles', uuid);
 		try {
@@ -240,7 +304,8 @@ if (import.meta.main) {
 			arsList.splice(arsList.indexOf(ars), 1);
 			return c.json({ value: true });
 		} else {
-			throw new Error('Arma Reforger Server not found.');
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
 		}
 	});
 
@@ -249,17 +314,17 @@ if (import.meta.main) {
 	// route for starting the isRunning state of a specific server
 	app.get('/api/server/:uuid/isRunning', (c) => {
 		const uuid = c.req.param('uuid');
+		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+
 		const ars = arsList.find((i) => i.uuid === uuid);
-		if (!ars) {
-			console.log(
-				`Arma Reforger Server with UUID ${uuid} is running: ${false}`,
-			);
-			return c.json({ value: false });
-		} else {
+		if (ars) {
 			console.log(
 				`Arma Reforger Server with UUID ${uuid} is running: ${ars.isRunning}`,
 			);
 			return c.json({ value: ars.isRunning });
+		} else {
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
 		}
 	});
 
@@ -315,7 +380,7 @@ if (import.meta.main) {
 		arsList.forEach((ars) => {
 			while (ars.messageQueue.length > 0) {
 				const message = ars.messageQueue.splice(0, 1)[0];
-				wsClients.forEach((wsClient) => {
+				wsClients.forEach((wsClient, index, object) => {
 					while (wsClient.readyState === 0) {
 						// itentionally do nothing
 					}
@@ -323,6 +388,7 @@ if (import.meta.main) {
 						wsClient.send(JSON.stringify(message));
 					} else {
 						wsClient.close();
+						object.splice(index, 1); // iterate and mutate
 						console.log('Closed non ready websocket.');
 					}
 				});
@@ -339,7 +405,7 @@ if (import.meta.main) {
 	Deno.addSignalListener(
 		'SIGINT',
 		async () => {
-			console.log('SIGINT!');
+			console.log('SIGINT!\n');
 			await server.shutdown();
 			Deno.exit(0);
 		},

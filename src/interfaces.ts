@@ -70,6 +70,6 @@ export interface Mod {
 }
 
 export interface PlayerIdentityId {
-    name: string,
-    identityId: string
+	name: string;
+	identityId: string;
 }
