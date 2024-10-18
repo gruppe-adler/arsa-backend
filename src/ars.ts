@@ -23,6 +23,27 @@ export class ArmaReforgerServer {
 		this.arsContainerId = '';
 		this.isRunning = false;
 		this.checkInterval = 0;
+
+		this.isRunning = this.checkIsRunning();
+		this.setIsRunning(this.isRunning);
+
+		this.startIsStillRunningChecker();
+	}
+
+	/* ---------------------------------------- */
+
+	startIsStillRunningChecker(): void {
+		this.checkInterval = setInterval(() => {
+			if (!this.checkIsRunning()) {
+				this.isRunning = false;
+				this.setIsRunning(this.isRunning);
+				this.messageQueue.push({
+					uuid: this.uuid,
+					isRunning: this.isRunning,
+				});
+				clearInterval(this.checkInterval);
+			}
+		}, 1_000);
 	}
 
 	/* ---------------------------------------- */
@@ -64,7 +85,7 @@ export class ArmaReforgerServer {
 				'--rm',
 				`--network=${network}`,
 				'--hostname',
-				`${this.uuid}`,
+				this.uuid,
 				'--mount',
 				`type=${mountType},source=${volumeSourceProfiles},target=/ars/profiles`,
 				'--mount',
@@ -76,7 +97,7 @@ export class ArmaReforgerServer {
 				'-p',
 				`${config.rcon.port}:${config.rcon.port}/udp`,
 				'--name',
-				`${this.uuid}`,
+				this.uuid,
 				'ars',
 				'-config',
 				`/ars/servers/${this.uuid}/config.json`,
@@ -90,7 +111,6 @@ export class ArmaReforgerServer {
 		const { code, stdout, stderr } = command.outputSync();
 		const output = (new TextDecoder().decode(stdout)).slice(0, -1);
 
-		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then the first 64 characters on stdout should be the container id
 		console.log(`docker run exit code: ${code}`);
 		if (code === 0) {
@@ -110,23 +130,9 @@ export class ArmaReforgerServer {
 			isRunning: this.isRunning,
 		});
 
-		console.log(`new ars container id: ${this.arsContainerId}`);
-
 		console.log('Arma Reforger Server started.');
 
-		this.checkInterval = setInterval(() => {
-			if (this.isRunning) {
-				if (!this.checkIsRunning()) {
-					this.isRunning = false;
-					this.setIsRunning(false);
-					this.messageQueue.push({
-						uuid: this.uuid,
-						isRunning: this.isRunning,
-					});
-					clearInterval(this.checkInterval);
-				}
-			}
-		}, 1_000);
+		this.startIsStillRunningChecker();
 	}
 
 	/* ---------------------------------------- */
@@ -136,17 +142,16 @@ export class ArmaReforgerServer {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
 				'kill',
-				`${this.arsContainerId}`,
+				this.uuid,
 			],
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
 		const output = (new TextDecoder().decode(stdout)).slice(0, -1);
 
-		console.log(`old ars container id: ${this.arsContainerId}`);
 		// if code = 0 then reset container id
 		console.log(`docker kill exit code: ${code}`);
-		if (code === 0 && output.substring(0, 64) === this.arsContainerId) {
+		if (code === 0) {
 			this.isRunning = false;
 			this.arsContainerId = '';
 			console.log(`SUCCESS: ${output}`);
@@ -161,8 +166,6 @@ export class ArmaReforgerServer {
 			uuid: this.uuid,
 			isRunning: this.isRunning,
 		});
-
-		console.log(`new ars container id: ${this.arsContainerId}`);
 
 		console.log('Arma Refoger Server stopped.');
 
@@ -179,7 +182,7 @@ export class ArmaReforgerServer {
 				'inspect',
 				'-f',
 				'{{.State.Running}}',
-				`${this.arsContainerId}`,
+				this.uuid,
 			],
 		});
 
@@ -200,13 +203,17 @@ export class ArmaReforgerServer {
 	/* ---------------------------------------- */
 
 	setIsRunning(isRunning: boolean) {
-		const server: Server = JSON.parse(
-			Deno.readTextFileSync(this.serverPath),
-		);
-		server.isRunning = isRunning;
-		Deno.writeTextFileSync(
-			this.serverPath,
-			JSON.stringify(server, null, 2),
-		);
+		try {
+			const server: Server = JSON.parse(
+				Deno.readTextFileSync(this.serverPath),
+			);
+			server.isRunning = isRunning;
+			Deno.writeTextFileSync(
+				this.serverPath,
+				JSON.stringify(server, null, 2),
+			);	
+		} catch (error) {
+			console.log(error);
+		}
 	}
 }

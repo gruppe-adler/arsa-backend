@@ -37,7 +37,10 @@ if (import.meta.main) {
 				join(dir, dirEntry.name, 'server.json'),
 			);
 			const server = JSON.parse(fileContent) as Server;
-			arsList.push(new ArmaReforgerServer(server.uuid));
+
+			const ars = new ArmaReforgerServer(server.uuid);
+			arsList.push(ars);
+
 			console.log(
 				`INIT: Adding Arma Reforger Server with UUID: ${server.uuid}`,
 			);
