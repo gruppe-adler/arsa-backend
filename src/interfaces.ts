@@ -8,6 +8,7 @@ export interface Server {
 	name: string;
 	isRunning: boolean;
 	config?: ServerConfig;
+	startupParameters: StartupParameter[];
 }
 
 export interface ServerConfig {
@@ -72,4 +73,15 @@ export interface Mod {
 export interface PlayerIdentityId {
 	name: string;
 	identityId: string;
+}
+
+export interface StartupParameter {
+	parameter: string;
+	tooltip: string;
+	enabled: boolean;
+	type: 'number' | 'string' | 'select';
+	value: number | string | undefined;
+	valueList?: string[];
+	minVal?: number;
+	maxVal?: number;
 }

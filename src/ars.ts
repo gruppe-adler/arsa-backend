@@ -1,6 +1,7 @@
 import { join } from '@std/path';
 
 import type { Server, ServerConfig, ServerStatusUpdate } from './interfaces.ts';
+import { defaultServer } from './defaults.ts';
 
 export class ArmaReforgerServer {
 	uuid: string;
@@ -48,6 +49,31 @@ export class ArmaReforgerServer {
 
 	/* ---------------------------------------- */
 
+	getStartupParametersArgsArray(): string[] {
+		let server: Server = defaultServer;
+		try {
+			server = JSON.parse(Deno.readTextFileSync(this.serverPath));
+		} catch (error) {
+			console.log(error);
+			return [];
+		}
+
+		const args: string[] = [];
+
+		server.startupParameters.forEach((startupParameter) => {
+			if (startupParameter.enabled) {
+				args.push(`-${startupParameter.parameter}`);
+				if (startupParameter.value) {
+					args.push(startupParameter.value as string);
+				}
+			}
+		});
+
+		return args;
+	}
+
+	/* ---------------------------------------- */
+
 	start(): void {
 		// read config to allow accessing values for command
 		const decoder = new TextDecoder('utf-8');
@@ -77,35 +103,36 @@ export class ArmaReforgerServer {
 		// it's important to NOT combine multiple arguments like '-p' and '2001' in one argument '-p 2001'
 		// otherwise it results in additional white spaces that break the call of docker with
 		// '-p 2001: 2001' instead of '-p 2001:2001'
+
+		const args = [
+			'run',
+			'-d',
+			'--rm',
+			`--network=${network}`,
+			'--hostname',
+			this.uuid,
+			'--mount',
+			`type=${mountType},source=${volumeSourceProfiles},target=/ars/profiles`,
+			'--mount',
+			`type=${mountType},source=${volumeSourceServers},target=/ars/servers,readonly`,
+			'-p',
+			`${config.bindPort}:${config.bindPort}/udp`,
+			'-p',
+			`${config.a2s.port}:${config.a2s.port}/udp`,
+			'-p',
+			`${config.rcon.port}:${config.rcon.port}/udp`,
+			'--name',
+			this.uuid,
+			'ars',
+			'-config',
+			`/ars/servers/${this.uuid}/config.json`,
+			'-profile',
+			`/ars/profiles/${this.uuid}`,
+		];
+
 		const command = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
-			args: [
-				'run',
-				'-d',
-				'--rm',
-				`--network=${network}`,
-				'--hostname',
-				this.uuid,
-				'--mount',
-				`type=${mountType},source=${volumeSourceProfiles},target=/ars/profiles`,
-				'--mount',
-				`type=${mountType},source=${volumeSourceServers},target=/ars/servers,readonly`,
-				'-p',
-				`${config.bindPort}:${config.bindPort}/udp`,
-				'-p',
-				`${config.a2s.port}:${config.a2s.port}/udp`,
-				'-p',
-				`${config.rcon.port}:${config.rcon.port}/udp`,
-				'--name',
-				this.uuid,
-				'ars',
-				'-config',
-				`/ars/servers/${this.uuid}/config.json`,
-				'-profile',
-				`/ars/profiles/${this.uuid}`,
-				'-maxFPS',
-				'60',
-			],
+			args: args.concat(this.getStartupParametersArgsArray()),
 		});
 
 		const { code, stdout, stderr } = command.outputSync();
@@ -211,7 +238,7 @@ export class ArmaReforgerServer {
 			Deno.writeTextFileSync(
 				this.serverPath,
 				JSON.stringify(server, null, 2),
-			);	
+			);
 		} catch (error) {
 			console.log(error);
 		}
