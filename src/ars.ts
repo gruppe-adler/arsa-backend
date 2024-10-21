@@ -1,6 +1,11 @@
 import { join } from '@std/path';
 
-import type { Server, ServerConfig, ServerStatusUpdate } from './interfaces.ts';
+import type {
+	DockerStats,
+	Server,
+	ServerConfig,
+	ServerStatusUpdate,
+} from './interfaces.ts';
 import { defaultServer } from './defaults.ts';
 
 export class ArmaReforgerServer {
@@ -242,5 +247,43 @@ export class ArmaReforgerServer {
 		} catch (error) {
 			console.log(error);
 		}
+	}
+
+	/* ---------------------------------------- */
+
+	async getStats(): Promise<DockerStats | null> {
+		// docker stats 0cb65489-efd4-4e2e-b495-06d5b4f213ed --no-stream --format "{{ json . }}"
+		// example output
+		/* 		{
+			"BlockIO":"0B / 0B",
+			"CPUPerc":"29.74%",
+			"Container":"0cb65489-efd4-4e2e-b495-06d5b4f213ed",
+			"ID":"d76cd514a9e3",
+			"MemPerc":"19.82%",
+			"MemUsage":"3.017GiB / 15.22GiB",
+			"Name":"0cb65489-efd4-4e2e-b495-06d5b4f213ed",
+			"NetIO":"26.3kB / 11.1kB",
+			"PIDs":"31"
+		} */
+
+		const command = new Deno.Command('docker', {
+			cwd: join(Deno.cwd(), 'ars'),
+			args: [
+				'stats',
+				this.uuid,
+				'--no-stream',
+				'--format',
+				'{{ json . }}',
+			],
+		});
+
+		let stats: DockerStats | null = null;
+
+		const { code, stdout, stderr } = await command.output();
+		if (code === 0) {
+			stats = JSON.parse(new TextDecoder().decode(stdout));
+		}
+
+		return stats;
 	}
 }

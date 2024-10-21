@@ -13,7 +13,7 @@ import { ArmaReforgerServer } from './ars.ts';
 import { createSharedFolders, directoryExists, fileExists } from './utils.ts';
 import { getServer, getServers } from './servers.ts';
 import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
-import type { Server, ServerConfig } from './interfaces.ts';
+import type { DockerStats, Server, ServerConfig } from './interfaces.ts';
 import {
 	addToKnownPlayers,
 	getKnownPlayers,
@@ -100,7 +100,9 @@ if (import.meta.main) {
 		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		const serversDir = join(Deno.cwd(), 'servers', uuid);
-		if (!await directoryExists(serversDir)) return c.json({ value: false }, 404);
+		if (!await directoryExists(serversDir)) {
+			return c.json({ value: false }, 404);
+		}
 
 		const server: Server = await c.req.json();
 		if (!server.config) return c.json({ value: false }, 500);
@@ -198,6 +200,30 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
+	// route for getting stats of ars docker instance
+	app.get('/api/server/:uuid/stats', async (c) => {
+		const { uuid } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.json([], 404);
+
+		console.log(
+			`Getting Stats for Arma Reforger Server with UUID: ${uuid}`,
+		);
+
+		let stats: DockerStats | null = null;
+
+		// getting stats
+		const ars = arsList.find((i) => i.uuid === uuid);
+		if (ars) {
+			stats = await ars.getStats();
+			return c.json(stats);
+		} else {
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
+		}
+	});
+
+	/* ---------------------------------------- */
+
 	// route for getting the public ip of the host
 	app.get('/api/get-public-ip', (c) => {
 		console.log(`Getting Public IP of this Host: ${publicIp}`);
@@ -209,7 +235,7 @@ if (import.meta.main) {
 	// route for getting all servers and their configs
 	app.get('/api/get-servers', async (c) => {
 		console.log(`Getting list of Arma Reforger Servers.`);
-		
+
 		const servers: Server[] = await getServers();
 		return c.json(servers);
 	});
@@ -226,7 +252,7 @@ if (import.meta.main) {
 		);
 
 		const server = await getServer(uuid);
-		if (server === null) { c.json({}), 404 }
+		if (server === null) c.json({}, 404);
 		return c.json(server);
 	});
 
@@ -235,7 +261,7 @@ if (import.meta.main) {
 	// route for starting a specific server
 	app.get('/api/server/:uuid/start', (c) => {
 		const uuid = c.req.param('uuid');
-		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		console.log(
 			`Starting Arma Reforger Server with UUID: ${uuid}`,
@@ -257,7 +283,7 @@ if (import.meta.main) {
 	// route for stopping a specific server
 	app.get('/api/server/:uuid/stop', (c) => {
 		const uuid = c.req.param('uuid');
-		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		console.log(
 			`Stopping Arma Reforger Server with UUID: ${uuid}`,
@@ -279,7 +305,7 @@ if (import.meta.main) {
 	// route for deleting a specific server
 	app.delete('/api/server/:uuid', async (c) => {
 		const uuid = c.req.param('uuid');
-		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		console.log(
 			`Deleting Arma Reforger Server with UUID: ${uuid}`,
@@ -317,7 +343,7 @@ if (import.meta.main) {
 	// route for starting the isRunning state of a specific server
 	app.get('/api/server/:uuid/isRunning', (c) => {
 		const uuid = c.req.param('uuid');
-		if (!uuidLib.validate(uuid)) return c.json({value: false}, 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		const ars = arsList.find((i) => i.uuid === uuid);
 		if (ars) {
