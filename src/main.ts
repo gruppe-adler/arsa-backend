@@ -156,6 +156,30 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
+	// route for getting a specific log file
+	app.delete('/api/server/:uuid/log/:log', async (c) => {
+		const { uuid, log } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.text('', 404);
+		if (!isValidLogDirName(log)) return c.text('', 404);
+
+		console.log(
+			`Deleting Log ${log} for Arma Reforger Server with UUID: ${uuid}`,
+		);
+
+		const logPath = join(Deno.cwd(), 'profiles', uuid, 'logs', log);
+		try {
+			await Deno.remove(logPath, { recursive: true });
+		} catch (error) {
+			if (!(error instanceof Deno.errors.NotFound)) {
+				throw error;
+			}
+		}
+
+		return c.json({ value: true });
+	});
+
+	/* ---------------------------------------- */
+
 	// route for getting all players from a specific log file
 	app.get('/api/server/:uuid/log-players/:log', async (c) => {
 		const { uuid, log } = c.req.param();
