@@ -13,7 +13,7 @@ import { ArmaReforgerServer } from './ars.ts';
 import { createSharedFolders, directoryExists, fileExists } from './utils.ts';
 import { getServer, getServers } from './servers.ts';
 import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
-import type { DockerStats, Server, ServerConfig } from './interfaces.ts';
+import type { PlayerIdentityId, DockerStats, Server, ServerConfig } from './interfaces.ts';
 import {
 	addToKnownPlayers,
 	getKnownPlayers,
@@ -211,15 +211,24 @@ if (import.meta.main) {
 	// route for getting all known players
 	app.get('/api/server/:uuid/known-players', async (c) => {
 		const { uuid } = c.req.param();
-		if (!uuidLib.validate(uuid)) return c.json([], 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		console.log(
 			`Getting known Players for Arma Reforger Server with UUID: ${uuid}`,
 		);
 
-		const knownPlayers = await getKnownPlayers(uuid);
+		let knownPlayers: PlayerIdentityId[] | null;
 
-		return c.json(knownPlayers);
+		// getting known players
+		const ars = arsList.find((i) => i.uuid === uuid);
+		if (ars) {
+			knownPlayers = await getKnownPlayers(uuid);
+			return c.json(knownPlayers);
+		} else 
+		{
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
+		}
 	});
 
 	/* ---------------------------------------- */
