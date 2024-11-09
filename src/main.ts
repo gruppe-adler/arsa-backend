@@ -227,7 +227,7 @@ if (import.meta.main) {
 	// route for getting stats of ars docker instance
 	app.get('/api/server/:uuid/stats', async (c) => {
 		const { uuid } = c.req.param();
-		if (!uuidLib.validate(uuid)) return c.json([], 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		console.log(
 			`Getting Stats for Arma Reforger Server with UUID: ${uuid}`,
