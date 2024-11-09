@@ -1,6 +1,6 @@
 {
 	"tasks": {
-		"dev": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net --env-file=.env.development src/main.ts",
+		"dev": "deno run --watch --allow-env --allow-read --allow-write --allow-run --allow-net --env-file=.env.development src/main.ts",
 		"prod": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net --env-file=.env.production src/main.ts",
 		"docker": "docker build -t arsa-backend .",
 		"docker-hetzner": "docker build -t arsa-backend --build-arg DOCKER_GID=988 .",
