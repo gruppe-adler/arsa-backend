@@ -13,7 +13,12 @@ import { ArmaReforgerServer } from './ars.ts';
 import { createSharedFolders, directoryExists, fileExists } from './utils.ts';
 import { getServer, getServers } from './servers.ts';
 import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
-import type { PlayerIdentityId, DockerStats, Server, ServerConfig } from './interfaces.ts';
+import type {
+	DockerStats,
+	PlayerIdentityId,
+	Server,
+	ServerConfig,
+} from './interfaces.ts';
 import {
 	addToKnownPlayers,
 	getKnownPlayers,
@@ -126,14 +131,23 @@ if (import.meta.main) {
 	// route for getting names of existing log names (containing dates)
 	app.get('/api/server/:uuid/logs', async (c) => {
 		const uuid = c.req.param('uuid');
-		if (!uuidLib.validate(uuid)) return c.json([], 404);
-
-		const logs = await getLogs(uuid);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
 		console.log(
 			`Getting Log Events for Arma Reforger Server with UUID: ${uuid}`,
 		);
-		return c.json(logs);
+
+		let logs: string[] | null;
+
+		// getting logs
+		const ars = arsList.find((i) => i.uuid === uuid);
+		if (ars) {
+			logs = await getLogs(uuid);
+			return c.json(logs);
+		} else {
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
+		}
 	});
 
 	/* ---------------------------------------- */
@@ -141,17 +155,17 @@ if (import.meta.main) {
 	// route for getting a specific log file
 	app.get('/api/server/:uuid/log/:log/:file', async (c) => {
 		const { uuid, log, file } = c.req.param();
-		if (!uuidLib.validate(uuid)) return c.text('', 404);
-		if (!isValidLogDirName(log)) return c.text('', 404);
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
+		if (!isValidLogDirName(log)) return c.json({ value: false }, 404);
 		if (!['console.log', 'error.log', 'script.log'].includes(file)) {
-			return c.text('', 404);
+			return c.json({ value: false }, 404);
 		}
 
 		console.log(
 			`Getting Log File ${log}/${file} for Arma Reforger Server with UUID: ${uuid}`,
 		);
 		const logFile = await getLogFile(uuid, log, file);
-		return c.text(logFile);
+		return c.json({ logFile });
 	});
 
 	/* ---------------------------------------- */
@@ -224,8 +238,7 @@ if (import.meta.main) {
 		if (ars) {
 			knownPlayers = await getKnownPlayers(uuid);
 			return c.json(knownPlayers);
-		} else 
-		{
+		} else {
 			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
 			return c.json({ value: false }, 404);
 		}
