@@ -38,7 +38,7 @@ export interface ServerConfig {
 		maxPlayers: number;
 		visible: boolean;
 		crossPlatform: boolean;
-		supportedPlatforms: string[];
+		supportedPlatforms: Platform[];
 		gameProperties: {
 			serverMaxViewDistance: number;
 			serverMinGrassDistance: number;
@@ -51,6 +51,7 @@ export interface ServerConfig {
 			VONCanTransmitCrossFaction: boolean;
 			missionHeader: object;
 		};
+		modsRequiredByDefault: boolean;
 		mods: Mod[];
 	};
 	operating: {
@@ -61,13 +62,19 @@ export interface ServerConfig {
 		playerSaveTime: number;
 		aiLimit: number;
 		slotReservationTimeout: number;
+		joinQueue: {
+			maxSize: number;
+		};
 	};
 }
+
+export type Platform = 'PLATFORM_PC' | 'PLATFORM_XBL' | 'PLATFORM_PSN';
 
 export interface Mod {
 	modId: string;
 	name: string;
 	version: string | undefined;
+	required: boolean;
 }
 
 export interface PlayerIdentityId {

@@ -30,6 +30,7 @@ export const defaultConfig: ServerConfig = {
 		supportedPlatforms: [
 			'PLATFORM_PC',
 			'PLATFORM_XBL',
+			'PLATFORM_PSN',
 		],
 		gameProperties: {
 			serverMaxViewDistance: 2500,
@@ -43,6 +44,7 @@ export const defaultConfig: ServerConfig = {
 			VONCanTransmitCrossFaction: false,
 			missionHeader: {},
 		},
+		modsRequiredByDefault: true,
 		mods: [],
 	},
 	operating: {
@@ -53,6 +55,9 @@ export const defaultConfig: ServerConfig = {
 		playerSaveTime: 120,
 		aiLimit: -1,
 		slotReservationTimeout: 60,
+		joinQueue: {
+			maxSize: 0,
+		},
 	},
 };
 
