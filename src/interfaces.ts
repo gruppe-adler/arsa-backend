@@ -74,7 +74,7 @@ export interface Mod {
 	modId: string;
 	name: string;
 	version: string | undefined;
-	required: boolean;
+	required: boolean | undefined;
 }
 
 export interface PlayerIdentityId {
