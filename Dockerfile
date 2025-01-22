@@ -6,8 +6,11 @@ ARG DOCKER_GID="989"
 # set 'root' as current user
 USER root
 
-# install docker-cli to allow starting containers on host
-RUN apk add docker-cli-compose
+# install docker to allow starting containers on host
+RUN apk add docker
+
+# install git to allow accessing remote Dockerfile URL
+RUN apk add git
 
 # create and set working directory
 WORKDIR /app
