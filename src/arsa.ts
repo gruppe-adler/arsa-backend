@@ -152,6 +152,7 @@ export class ArmaReforgerServerAdmin {
 		const commandBuild = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
+				'buildx',
 				'build',
 				'--no-cache',
 				'-t',
