@@ -20,11 +20,6 @@ export class ArmaReforgerServerAdmin {
 
 	constructor() {
 		this.inspectARS();
-		if (this.arsInspect) {
-			this.setArsStatus(ArsStatus.AVAILABLE);
-		} else {
-			this.setArsStatus(ArsStatus.UNAVAILABLE);
-		}
 
 		// deno-lint-ignore no-this-alias
 		const self = this;
@@ -84,7 +79,13 @@ export class ArmaReforgerServerAdmin {
 			// console.log(jsonString);
 			console.log('ARS inspected successfully.');
 			this.arsInspect = JSON.parse(jsonString)[0];
-		} else this.arsInspect = undefined;
+
+			this.setArsStatus(ArsStatus.AVAILABLE);
+		} else {
+			this.arsInspect = undefined;
+			this.setArsStatus(ArsStatus.UNAVAILABLE);
+		}
+		this.sendArsStatusUpdate();
 	}
 
 	async recreateARS() {
