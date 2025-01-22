@@ -2,6 +2,7 @@ import { join } from '@std/path';
 
 import type {
 	DockerStats,
+	IsRunningUpdate,
 	Server,
 	ServerConfig,
 	ServerStatusUpdate,
@@ -44,9 +45,10 @@ export class ArmaReforgerServer {
 				this.isRunning = false;
 				this.setIsRunning(this.isRunning);
 				this.messageQueue.push({
+					type: 'isRunningUpdate',
 					uuid: this.uuid,
 					isRunning: this.isRunning,
-				});
+				} as IsRunningUpdate);
 				clearInterval(this.checkInterval);
 			}
 		}, 1_000);
@@ -158,9 +160,10 @@ export class ArmaReforgerServer {
 		this.setIsRunning(this.isRunning);
 
 		this.messageQueue.push({
+			type: 'isRunningUpdate',
 			uuid: this.uuid,
 			isRunning: this.isRunning,
-		});
+		} as IsRunningUpdate);
 
 		console.log('Arma Reforger Server started.');
 
@@ -195,9 +198,10 @@ export class ArmaReforgerServer {
 		this.setIsRunning(this.isRunning);
 
 		this.messageQueue.push({
+			type: 'isRunningUpdate',
 			uuid: this.uuid,
 			isRunning: this.isRunning,
-		});
+		} as IsRunningUpdate);
 
 		console.log('Arma Refoger Server stopped.');
 
