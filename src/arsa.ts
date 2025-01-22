@@ -83,7 +83,9 @@ export class ArmaReforgerServerAdmin {
 			this.setArsStatus(ArsStatus.AVAILABLE);
 		} else {
 			this.arsInspect = undefined;
-			this.setArsStatus(ArsStatus.UNAVAILABLE);
+			if (this.arsStatus !== ArsStatus.RECREATING) {
+				this.setArsStatus(ArsStatus.UNAVAILABLE);
+			}
 		}
 		this.sendArsStatusUpdate();
 	}
