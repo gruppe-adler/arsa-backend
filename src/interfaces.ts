@@ -1,6 +1,21 @@
 export interface ServerStatusUpdate {
+	type: 'isRunningUpdate' | 'arsStatusUpdate' | 'message';
+}
+
+export interface IsRunningUpdate extends ServerStatusUpdate {
+	type: 'isRunningUpdate';
 	uuid: string;
 	isRunning: boolean;
+}
+
+export interface ArsStatusUpdate extends ServerStatusUpdate {
+	type: 'arsStatusUpdate';
+	arsStatus: ArsStatus;
+}
+
+export interface ServerMessage extends ServerStatusUpdate {
+	type: 'message';
+	message: string;
 }
 
 export interface Server {
@@ -103,4 +118,68 @@ export interface DockerStats {
 	Name: string;
 	NetIO: string;
 	PIDs: string;
+}
+
+export enum ArsStatus {
+	UNKNOWN,
+	AVAILABLE,
+	RECREATING,
+	RECREATING_FAILURE,
+	UNAVAILABLE,
+}
+
+export interface DockerInspect {
+	Id: string;
+	RepoTags: string[];
+	Parent: string;
+	Comment: string;
+	Created: string;
+	DockerVersion: string;
+	Author: string;
+	Config: DockerConfig;
+	Architecture: string;
+	Os: string;
+	Size: number;
+	GraphDriver: {
+		Data: {
+			LowerDir: string;
+			MergedDir: string;
+			UpperDir: string;
+			WorkDir: string;
+		};
+		Name: string;
+	};
+	RootFS: {
+		Type: string;
+		Layers: string[];
+	};
+	Metadata: {
+		LastTagTime: string;
+	};
+}
+
+export interface DockerConfig {
+	Hostname: string;
+	Domainname: string;
+	User: string;
+	AttachStdin: boolean;
+	AttachStdout: boolean;
+	AttachStderr: boolean;
+	ExposedPorts: unknown; // ???
+	Tty: boolean;
+	OpenStdin: boolean;
+	StdinOnce: boolean;
+	Env: string[];
+	Cmd: null; // ???
+	ArgsEscaped: boolean;
+	Image: string;
+	Volumes: null; // ???
+	WorkingDir: string;
+	Entrypoint: string[];
+	OnBuild: null; // ???
+	Labels: {
+		'org.opencontainers.image.ref.name': string;
+		'org.opencontainers.image.version': string;
+	};
+	Shell: string[];
 }
