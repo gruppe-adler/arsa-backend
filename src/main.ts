@@ -7,9 +7,8 @@ import { cors } from 'hono/cors';
 import { upgradeWebSocket } from 'hono/deno';
 import { type WSContext } from 'hono/ws';
 
-import { publicIpv4 } from 'npm:public-ip@7.0.1';
-
 import { ArmaReforgerServer } from './ars.ts';
+import { ArmaReforgerServerAdmin } from './arsa.ts';
 import { createSharedFolders, directoryExists, fileExists } from './utils.ts';
 import { getServer, getServers } from './servers.ts';
 import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
@@ -32,29 +31,7 @@ if (import.meta.main) {
 		await createSharedFolders();
 	}
 
-	// INIT: read all existing server.json and create ars instances
-	const arsList: ArmaReforgerServer[] = [];
-	const dir = join(Deno.cwd(), 'servers');
-
-	try {
-		for await (const dirEntry of Deno.readDir(dir)) {
-			const fileContent = await Deno.readTextFile(
-				join(dir, dirEntry.name, 'server.json'),
-			);
-			const server = JSON.parse(fileContent) as Server;
-
-			const ars = new ArmaReforgerServer(server.uuid);
-			arsList.push(ars);
-
-			console.log(
-				`INIT: Adding Arma Reforger Server with UUID: ${server.uuid}`,
-			);
-		}
-	} catch (error) {
-		console.log(error);
-	}
-
-	const publicIp = await publicIpv4();
+	const arsa = new ArmaReforgerServerAdmin();
 
 	/* ---------------------------------------- */
 
@@ -92,7 +69,7 @@ if (import.meta.main) {
 			console.log(error);
 		}
 
-		arsList.push(new ArmaReforgerServer(uuid));
+		arsa.arsList.push(new ArmaReforgerServer(uuid));
 		console.log(`Added Arma Reforger Server with UUID: ${uuid}`);
 		return c.json({ uuid });
 	});
@@ -140,7 +117,7 @@ if (import.meta.main) {
 		let logs: string[] | null;
 
 		// getting logs
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			logs = await getLogs(uuid);
 			return c.json(logs);
@@ -234,7 +211,7 @@ if (import.meta.main) {
 		let knownPlayers: PlayerIdentityId[] | null;
 
 		// getting known players
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			knownPlayers = await getKnownPlayers(uuid);
 			return c.json(knownPlayers);
@@ -258,7 +235,7 @@ if (import.meta.main) {
 		let stats: DockerStats | null = null;
 
 		// getting stats
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			stats = await ars.getStats();
 			return c.json(stats);
@@ -272,8 +249,28 @@ if (import.meta.main) {
 
 	// route for getting the public ip of the host
 	app.get('/api/get-public-ip', (c) => {
-		console.log(`Getting Public IP of this Host: ${publicIp}`);
-		return c.json({ ipv4: publicIp });
+		console.log(`Getting Public IP of this Host: ${arsa.publicIp}`);
+		return c.json({ ipv4: arsa.publicIp });
+	});
+
+	/* ---------------------------------------- */
+
+	// route for recreating ARS docker image
+	app.get('/api/recreate-ars-docker-image', (c) => {
+		console.log('Recreating ARS docker image started...');
+
+		arsa.recreateARS();
+
+		return c.json({ value: true });
+	});
+
+	/* ---------------------------------------- */
+
+	// route for getting the ARS status
+	app.get('/api/get-ars-status', (c) => {
+		console.log('Getting ARS status...');
+
+		return c.json({ status: arsa.arsStatus });
 	});
 
 	/* ---------------------------------------- */
@@ -314,7 +311,7 @@ if (import.meta.main) {
 		);
 
 		// starting ars instance
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			ars.start();
 			return c.json({ value: true });
@@ -336,7 +333,7 @@ if (import.meta.main) {
 		);
 
 		// stop running ars instance
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			ars.stop();
 			return c.json({ value: true });
@@ -374,9 +371,9 @@ if (import.meta.main) {
 				throw error;
 			}
 		}
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
-			arsList.splice(arsList.indexOf(ars), 1);
+			arsa.arsList.splice(arsa.arsList.indexOf(ars), 1);
 			return c.json({ value: true });
 		} else {
 			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
@@ -391,7 +388,7 @@ if (import.meta.main) {
 		const uuid = c.req.param('uuid');
 		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 
-		const ars = arsList.find((i) => i.uuid === uuid);
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
 			console.log(
 				`Arma Reforger Server with UUID ${uuid} is running: ${ars.isRunning}`,
@@ -452,7 +449,7 @@ if (import.meta.main) {
 
 	// broadcast all updates related to ars isRunning status to all clients
 	const interval = setInterval(() => {
-		arsList.forEach((ars) => {
+		arsa.arsList.forEach((ars) => {
 			while (ars.messageQueue.length > 0) {
 				const message = ars.messageQueue.splice(0, 1)[0];
 				wsClients.forEach((wsClient, index, object) => {
@@ -472,6 +469,25 @@ if (import.meta.main) {
 				);
 			}
 		});
+
+		while (arsa.messageQueue.length > 0) {
+			const message = arsa.messageQueue.splice(0, 1)[0];
+			wsClients.forEach((wsClient, index, object) => {
+				while (wsClient.readyState === 0) {
+					// itentionally do nothing
+				}
+				if (wsClient.readyState === 1) {
+					wsClient.send(JSON.stringify(message));
+				} else {
+					wsClient.close();
+					object.splice(index, 1); // iterate and mutate
+					console.log('Closed non ready websocket.');
+				}
+			});
+			console.log(
+				`Sent message to all clients: ${JSON.stringify(message)}`,
+			);
+		}
 	}, 3_000);
 
 	/* ---------------------------------------- */
