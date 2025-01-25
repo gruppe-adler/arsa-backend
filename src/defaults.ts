@@ -49,6 +49,7 @@ export const defaultConfig: ServerConfig = {
 	},
 	operating: {
 		lobbyPlayerSynchronise: true,
+		disableCrashReporter: false,
 		disableNavmeshStreaming: undefined,
 		disableServerShutdown: false,
 		disableAI: false,
