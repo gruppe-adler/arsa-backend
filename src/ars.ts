@@ -95,12 +95,12 @@ export class ArmaReforgerServer {
 			volumeSourceServers = join(Deno.cwd(), 'servers');
 			mountType = 'bind';
 		} else if (environment === 'Production') {
-			network = 'arsa_network';
+			network = 'host';
 			volumeSourceProfiles = 'arsa-profiles';
 			volumeSourceServers = 'arsa-servers';
 			mountType = 'volume';
 		} else {
-			network = 'arsa_network';
+			network = 'host';
 			volumeSourceProfiles = 'arsa-profiles';
 			volumeSourceServers = 'arsa-servers';
 			mountType = 'volume';
