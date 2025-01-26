@@ -488,7 +488,7 @@ if (import.meta.main) {
 				`Sent message to all clients: ${JSON.stringify(message)}`,
 			);
 		}
-	}, 3_000);
+	}, parseInt(Deno.env.get('PORT') || '3000'));
 
 	/* ---------------------------------------- */
 
