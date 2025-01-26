@@ -159,7 +159,9 @@ export class ArmaReforgerServerAdmin {
 				'--no-cache',
 				'-t',
 				'ars',
-				'https://github.com/gruppe-adler/arsa-backend.git#main:ars',
+				'-f',
+				'/etc/docker-configs/arsa/ars/Dockerfile',
+				'.',
 			],
 		});
 		const commandBuildOutput = await commandBuild.output();
