@@ -87,7 +87,7 @@ export class ArmaReforgerServer {
 		const fileContent = Deno.readFileSync(this.configPath);
 		const config: ServerConfig = JSON.parse(decoder.decode(fileContent));
 
-		const network = Deno.env.get('ENVIRONMENT') || 'default';
+		const network = Deno.env.get('NETWORK') || 'default';
 		const mountTypeProfiles = Deno.env.get('MOUNT_TYPE_PROFILES') || 'bind';
 		const mountTypeServers = Deno.env.get('MOUNT_TYPE_SERVERS') || 'bind';
 		const sourceProfiles = Deno.env.get('SOURCE_PROFILES') ||
