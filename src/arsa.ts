@@ -160,7 +160,7 @@ export class ArmaReforgerServerAdmin {
 				'-t',
 				'ars',
 				'-f',
-				'/etc/docker-configs/arsa/ars/Dockerfile',
+				'/app/ars/Dockerfile',
 				'.',
 			],
 		});
