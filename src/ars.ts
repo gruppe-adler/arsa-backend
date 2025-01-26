@@ -87,24 +87,13 @@ export class ArmaReforgerServer {
 		const fileContent = Deno.readFileSync(this.configPath);
 		const config: ServerConfig = JSON.parse(decoder.decode(fileContent));
 
-		const environment = Deno.env.get('ENVIRONMENT') || 'Production';
-		let network, volumeSourceProfiles, volumeSourceServers, mountType;
-		if (environment === 'Development') {
-			network = 'default';
-			volumeSourceProfiles = join(Deno.cwd(), 'profiles');
-			volumeSourceServers = join(Deno.cwd(), 'servers');
-			mountType = 'bind';
-		} else if (environment === 'Production') {
-			network = 'host';
-			volumeSourceProfiles = 'arsa-profiles';
-			volumeSourceServers = 'arsa-servers';
-			mountType = 'volume';
-		} else {
-			network = 'host';
-			volumeSourceProfiles = 'arsa-profiles';
-			volumeSourceServers = 'arsa-servers';
-			mountType = 'volume';
-		}
+		const network = Deno.env.get('ENVIRONMENT') || 'default';
+		const mountTypeProfiles = Deno.env.get('MOUNT_TYPE_PROFILES') || 'bind';
+		const mountTypeServers = Deno.env.get('MOUNT_TYPE_SERVERS') || 'bind';
+		const sourceProfiles = Deno.env.get('SOURCE_PROFILES') ||
+			'/etc/arsa/arsa-profiles';
+		const sourceServers = Deno.env.get('SOURCE_SERVERS') ||
+			'/etc/arsa/arsa-servers';
 
 		// starting Arma Reforger Server within a Docker Container
 		// it's important to NOT combine multiple arguments like '-p' and '2001' in one argument '-p 2001'
@@ -119,9 +108,9 @@ export class ArmaReforgerServer {
 			'--hostname',
 			this.uuid,
 			'--mount',
-			`type=${mountType},source=${volumeSourceProfiles},target=/ars/profiles`,
+			`type=${mountTypeProfiles},source=${sourceProfiles},target=/ars/profiles`,
 			'--mount',
-			`type=${mountType},source=${volumeSourceServers},target=/ars/servers,readonly`,
+			`type=${mountTypeServers},source=${sourceServers},target=/ars/servers,readonly`,
 			'-p',
 			`${config.bindPort}:${config.bindPort}/udp`,
 			'-p',
