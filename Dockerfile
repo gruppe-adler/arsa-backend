@@ -3,6 +3,9 @@ FROM denoland/deno:alpine
 # the group id of the group docker of your docker host
 ARG DOCKER_GID="989"
 
+# the port used in the EXPOSE instruction
+ARG DOCKER_PORT="3000"
+
 # set 'root' as current user
 USER root
 
@@ -28,6 +31,6 @@ RUN addgroup --gid ${DOCKER_GID} docker && adduser deno docker
 # switch to unprivileged user 'deno'
 USER deno
 
-EXPOSE 3000
+EXPOSE ${DOCKER_PORT}
 
 ENTRYPOINT ["deno", "task", "prod"]

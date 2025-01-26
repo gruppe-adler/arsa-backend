@@ -2,8 +2,9 @@
 	"tasks": {
 		"dev": "deno run --watch --allow-env --allow-read --allow-write --allow-run --allow-net --env-file=.env.development src/main.ts",
 		"prod": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net --env-file=.env.production src/main.ts",
-		"docker": "docker build --no-cache -t arsa-backend .",
-		"docker-hetzner": "docker build --no-cache -t arsa-backend --build-arg DOCKER_GID=988 .",
+		"docker": "docker build --no-cache -t arsa-backend DOCKER_PORT=3000 .",
+		"docker-hetzner": "docker build --no-cache -t arsa-backend --build-arg DOCKER_GID=988 --build-arg DOCKER_PORT=3000 .",
+		"docker-grad": "docker build --no-cache -t arsa-backend --build-arg DOCKER_GID=102 --build-arg DOCKER_PORT=80 .",
 		"docker-ars": "docker build --no-cache -t ars ./ars",
 		"docker-run": "docker run -d --rm -p 3000:3000 --name arsa-backend arsa-backend",
 		"lint": "deno lint",
