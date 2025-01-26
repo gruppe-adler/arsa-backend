@@ -429,7 +429,9 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
-	const server = Deno.serve({ port: 3_000 }, app.fetch);
+	const server = Deno.serve({
+		port: parseInt(Deno.env.get('PORT') || '3000'),
+	}, app.fetch);
 
 	showRoutes(app);
 
@@ -488,7 +490,7 @@ if (import.meta.main) {
 				`Sent message to all clients: ${JSON.stringify(message)}`,
 			);
 		}
-	}, parseInt(Deno.env.get('PORT') || '3000'));
+	}, 3_000);
 
 	/* ---------------------------------------- */
 
