@@ -37,7 +37,15 @@ if (import.meta.main) {
 
 	// INIT: configure and start hono server with routes and websocket
 	const app = new Hono();
-	app.use('/api/*', cors());
+	app.use(
+		'/api/*',
+		cors({
+			origin: [
+				'https://arsa.gruppe-adler.de',
+				'https://arsa-api.gruppe-adler.de',
+			],
+		}),
+	);
 
 	/* ---------------------------------------- */
 
