@@ -40,10 +40,11 @@ if (import.meta.main) {
 	app.use(
 		'/api/*',
 		cors({
-			origin: [
-				'https://arsa.gruppe-adler.de',
-				'https://arsa-api.gruppe-adler.de',
-			],
+			origin: 'https://arsa.gruppe-adler.de',
+			allowHeaders: ['Authorization', 'Content-Type'],
+			allowMethods: ['POST', 'PUT', 'GET', 'DELETE'],
+			exposeHeaders: ['Content-Length'],
+			maxAge: 3600,
 		}),
 	);
 
