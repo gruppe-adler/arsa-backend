@@ -4,7 +4,7 @@ import * as uuidLib from '@std/uuid';
 import { Hono } from 'hono';
 import { showRoutes } from 'hono/dev';
 import { cors } from 'hono/cors';
-import { upgradeWebSocket } from 'hono/deno';
+import { serveStatic, upgradeWebSocket } from 'hono/deno';
 import { type WSContext } from 'hono/ws';
 
 import { ArmaReforgerServer } from './ars.ts';
@@ -37,6 +37,9 @@ if (import.meta.main) {
 
 	// INIT: configure and start hono server with routes and websocket
 	const app = new Hono();
+
+	/* ---------------------------------------- */
+
 	app.use(
 		'/api/*',
 		cors({
@@ -435,6 +438,10 @@ if (import.meta.main) {
 			};
 		}),
 	);
+
+	/* ---------------------------------------- */
+
+	app.use('/app/*', serveStatic({ root: './' }));
 
 	/* ---------------------------------------- */
 
