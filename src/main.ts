@@ -432,7 +432,7 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
-	app.use(
+	/* 	app.use(
 		'/assets/*',
 		serveStatic({
 			root: './dist/assets',
@@ -445,7 +445,10 @@ if (import.meta.main) {
 
 	app.use('/vite.svg', serveStatic({ path: './dist/vite.svg' }));
 
-	app.use('/*', serveStatic({ path: './dist/index.html' }));
+	app.use('/*', serveStatic({ path: './dist/index.html' })); */
+
+	app.get('/', serveStatic({ root: './dist' }));
+	app.get('*', serveStatic({ path: './dist/index.html' }));
 
 	/* ---------------------------------------- */
 
