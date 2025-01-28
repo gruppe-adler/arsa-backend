@@ -441,13 +441,7 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
-	app.get('/index.html', (c) => {
-		return c.redirect('/app/index.html', 301);
-	});
-
-	/* ---------------------------------------- */
-
-	app.use('/app/*', serveStatic({ root: './' }));
+	app.use('/*', serveStatic({ root: './app' }));
 
 	/* ---------------------------------------- */
 
