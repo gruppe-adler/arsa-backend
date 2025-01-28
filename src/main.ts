@@ -432,7 +432,11 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
-	app.use('/*', serveStatic({ root: './app' }));
+	app.use('/assets/*', serveStatic({ root: './app/assets' }));
+
+	app.use('/vite.svg', serveStatic({ path: './app/vite.svg' }));
+
+	app.use('/*', serveStatic({ path: './app/index.html' }));
 
 	/* ---------------------------------------- */
 
