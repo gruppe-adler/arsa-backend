@@ -432,23 +432,11 @@ if (import.meta.main) {
 
 	/* ---------------------------------------- */
 
-	/* 	app.use(
-		'/assets/*',
-		serveStatic({
-			root: './dist/assets',
-			mimes: {
-				js: 'application/javascript',
-				css: 'text/css',
-			},
-		}),
-	);
-
 	app.use('/vite.svg', serveStatic({ path: './dist/vite.svg' }));
 
-	app.use('/*', serveStatic({ path: './dist/index.html' })); */
+	app.use('/assets/*', serveStatic({ root: './dist/assets' }));
 
-	app.get('/', serveStatic({ root: './dist' }));
-	app.get('*', serveStatic({ path: './dist/index.html' }));
+	app.use('/*', serveStatic({ path: './dist/index.html' }));
 
 	/* ---------------------------------------- */
 
