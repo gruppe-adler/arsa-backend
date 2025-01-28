@@ -1,26 +1,25 @@
 {
   "version": "4",
   "specifiers": {
-    "jsr:@hono/hono@^4.6.4": "4.6.4",
-    "jsr:@std/assert@1": "1.0.6",
-    "jsr:@std/bytes@^1.0.2": "1.0.2",
+    "jsr:@hono/hono@^4.6.19": "4.6.19",
+    "jsr:@std/assert@^1.0.11": "1.0.11",
+    "jsr:@std/bytes@^1.0.2": "1.0.4",
     "jsr:@std/crypto@^1.0.3": "1.0.3",
-    "jsr:@std/dotenv@*": "0.225.2",
-    "jsr:@std/dotenv@~0.225.2": "0.225.2",
-    "jsr:@std/fs@^1.0.4": "1.0.4",
-    "jsr:@std/internal@^1.0.4": "1.0.4",
-    "jsr:@std/path@^1.0.6": "1.0.6",
+    "jsr:@std/dotenv@~0.225.3": "0.225.3",
+    "jsr:@std/fs@^1.0.10": "1.0.10",
+    "jsr:@std/internal@^1.0.5": "1.0.5",
+    "jsr:@std/path@^1.0.8": "1.0.8",
     "jsr:@std/uuid@^1.0.4": "1.0.4",
     "npm:@types/node@*": "22.5.4",
     "npm:public-ip@7.0.1": "7.0.1",
     "npm:public-ip@^7.0.1": "7.0.1"
   },
   "jsr": {
-    "@hono/hono@4.6.4": {
-      "integrity": "9bbd937653ab902405af33743561140f8883d27dc730eb9ceac665e2468c8bf6"
+    "@hono/hono@4.6.19": {
+      "integrity": "5ba1bd0ef74449c0a647f029e29896776c30fb64aefbcef8724af4ce4846791b"
     },
-    "@std/assert@1.0.6": {
-      "integrity": "1904c05806a25d94fe791d6d883b685c9e2dcd60e4f9fc30f4fc5cf010c72207",
+    "@std/assert@1.0.11": {
+      "integrity": "2461ef3c368fe88bc60e186e7744a93112f16fd110022e113a0849e94d1c83c1",
       "dependencies": [
         "jsr:@std/internal"
       ]
@@ -28,23 +27,26 @@
     "@std/bytes@1.0.2": {
       "integrity": "fbdee322bbd8c599a6af186a1603b3355e59a5fb1baa139f8f4c3c9a1b3e3d57"
     },
+    "@std/bytes@1.0.4": {
+      "integrity": "11a0debe522707c95c7b7ef89b478c13fb1583a7cfb9a85674cd2cc2e3a28abc"
+    },
     "@std/crypto@1.0.3": {
       "integrity": "a2a32f51ddef632d299e3879cd027c630dcd4d1d9a5285d6e6788072f4e51e7f"
     },
-    "@std/dotenv@0.225.2": {
-      "integrity": "e2025dce4de6c7bca21dece8baddd4262b09d5187217e231b033e088e0c4dd23"
+    "@std/dotenv@0.225.3": {
+      "integrity": "a95e5b812c27b0854c52acbae215856d9cce9d4bbf774d938c51d212711e8d4a"
     },
-    "@std/fs@1.0.4": {
-      "integrity": "2907d32d8d1d9e540588fd5fe0ec21ee638134bd51df327ad4e443aaef07123c",
+    "@std/fs@1.0.10": {
+      "integrity": "bf041f9d7a0a460817f0421be8946d0e06011b3433e6c83a215628de5e3c7c2c",
       "dependencies": [
         "jsr:@std/path"
       ]
     },
-    "@std/internal@1.0.4": {
-      "integrity": "62e8e4911527e5e4f307741a795c0b0a9e6958d0b3790716ae71ce085f755422"
+    "@std/internal@1.0.5": {
+      "integrity": "54a546004f769c1ac9e025abd15a76b6671ddc9687e2313b67376125650dc7ba"
     },
-    "@std/path@1.0.6": {
-      "integrity": "ab2c55f902b380cf28e0eec501b4906e4c1960d13f00e11cfbcd21de15f18fed"
+    "@std/path@1.0.8": {
+      "integrity": "548fa456bb6a04d3c1a1e7477986b6cffbce95102d0bb447c67c4ee70e0364be"
     },
     "@std/uuid@1.0.4": {
       "integrity": "f4233149cc8b4753cc3763fd83a7c4101699491f55c7be78dc7b30281946d7a0",
@@ -258,11 +260,11 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@hono/hono@^4.6.4",
-      "jsr:@std/assert@1",
-      "jsr:@std/dotenv@~0.225.2",
-      "jsr:@std/fs@^1.0.4",
-      "jsr:@std/path@^1.0.6",
+      "jsr:@hono/hono@^4.6.19",
+      "jsr:@std/assert@^1.0.11",
+      "jsr:@std/dotenv@~0.225.3",
+      "jsr:@std/fs@^1.0.10",
+      "jsr:@std/path@^1.0.8",
       "jsr:@std/uuid@^1.0.4",
       "npm:public-ip@^7.0.1"
     ]
