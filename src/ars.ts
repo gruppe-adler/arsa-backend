@@ -3,6 +3,7 @@ import { join } from '@std/path';
 import type {
 	DockerStats,
 	IsRunningUpdate,
+	ResultSize,
 	Server,
 	ServerConfig,
 	ServerStatusUpdate,
@@ -279,4 +280,139 @@ export class ArmaReforgerServer {
 
 		return stats;
 	}
+
+	/* ---------------------------------------- */
+
+	async getSize(): Promise<ResultSize | null> {
+		const result: ResultSize = {
+			profileDir: '0B',
+			serverDir: '0B',
+			modsDir: '0B',
+			logsDir: '0B',
+			allMods: '',
+			allLogs: '',
+		};
+
+		/* ---------- */
+
+		const commandServerDir = new Deno.Command('du', {
+			cwd: join(Deno.cwd(), 'servers'),
+			args: [
+				'-sh',
+				this.uuid,
+			],
+		});
+
+		const commandServerDirOutput = await commandServerDir.output();
+		if (commandServerDirOutput.success) {
+			result.serverDir =
+				(new TextDecoder().decode(commandServerDirOutput.stdout)).split(
+					'\t',
+				)[0];
+		}
+
+		/* ---------- */
+
+		try {
+			await Deno.stat(join(Deno.cwd(), 'profiles', this.uuid));
+		} catch (err) {
+			if (!(err instanceof Deno.errors.NotFound)) {
+				throw err;
+			}
+			return result;
+		}
+
+		/* ---------- */
+
+		const commandProfileDir = new Deno.Command('du', {
+			cwd: join(Deno.cwd(), 'profiles'),
+			args: [
+				'-sh',
+				this.uuid,
+			],
+		});
+
+		const commandProfileDirOutput = await commandProfileDir.output();
+		if (commandProfileDirOutput.success) {
+			result.profileDir =
+				(new TextDecoder().decode(commandProfileDirOutput.stdout))
+					.split('\t')[0];
+		}
+
+		/* ---------- */
+
+		const commandModsDir = new Deno.Command('du', {
+			cwd: join(Deno.cwd(), 'profiles'),
+			args: [
+				'-sh',
+				join(this.uuid, 'addons'),
+			],
+		});
+
+		const commandModsDirOutput = await commandModsDir.output();
+		if (commandModsDirOutput.success) {
+			result.modsDir =
+				(new TextDecoder().decode(commandModsDirOutput.stdout)).split(
+					'\t',
+				)[0];
+		}
+
+		/* ---------- */
+
+		const commandLogsDir = new Deno.Command('du', {
+			cwd: join(Deno.cwd(), 'profiles'),
+			args: [
+				'-sh',
+				join(this.uuid, 'logs'),
+			],
+		});
+
+		const commandLogsDirOutput = await commandLogsDir.output();
+		if (commandLogsDirOutput.success) {
+			result.logsDir =
+				(new TextDecoder().decode(commandLogsDirOutput.stdout)).split(
+					'\t',
+				)[0];
+		}
+
+		/* ---------- */
+
+		const commandSingleModsDir = new Deno.Command('du', {
+			cwd: join(Deno.cwd(), 'profiles', this.uuid, 'addons'),
+			args: [
+				'-h',
+				'--max-depth=1',
+			],
+		});
+
+		const commandSingleModsDirOutput = await commandSingleModsDir.output();
+		if (commandSingleModsDirOutput.success) {
+			result.allMods = new TextDecoder().decode(
+				commandSingleModsDirOutput.stdout,
+			);
+		}
+
+		/* ---------- */
+
+		const commandSingleLogsDir = new Deno.Command('du', {
+			cwd: join(Deno.cwd(), 'profiles', this.uuid, 'logs'),
+			args: [
+				'-h',
+				'--max-depth=1',
+			],
+		});
+
+		const commandSingleLogsDirOutput = await commandSingleLogsDir.output();
+		if (commandSingleLogsDirOutput.success) {
+			result.allLogs = new TextDecoder().decode(
+				commandSingleLogsDirOutput.stdout,
+			);
+		}
+
+		/* ---------- */
+
+		return result;
+	}
+
+	/* ---------------------------------------- */
 }

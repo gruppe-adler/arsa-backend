@@ -15,6 +15,7 @@ import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
 import type {
 	DockerStats,
 	PlayerIdentityId,
+	ResultSize,
 	Server,
 	ServerConfig,
 } from './interfaces.ts';
@@ -242,6 +243,30 @@ if (import.meta.main) {
 		if (ars) {
 			stats = await ars.getStats();
 			return c.json(stats);
+		} else {
+			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
+			return c.json({ value: false }, 404);
+		}
+	});
+
+	/* ---------------------------------------- */
+
+	// route for getting size of ars docker instance
+	app.get('/api/server/:uuid/size', async (c) => {
+		const { uuid } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
+
+		console.log(
+			`Getting Size for Arma Reforger Server with UUID: ${uuid}`,
+		);
+
+		let size: ResultSize | null = null;
+
+		// getting size
+		const ars = arsa.arsList.find((i) => i.uuid === uuid);
+		if (ars) {
+			size = await ars.getSize();
+			return c.json(size);
 		} else {
 			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
 			return c.json({ value: false }, 404);
