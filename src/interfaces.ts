@@ -130,6 +130,20 @@ export interface ResultSize {
 	allLogs: string;
 }
 
+export interface ResultLogs {
+	success: boolean;
+	logs: Log[];
+	containsCrashReportsLog: boolean;
+}
+
+export interface Log {
+	dir: string;
+	containsConsoleLog: boolean;
+	containsScriptLog: boolean;
+	containsErrorLog: boolean;
+	containsCrashLog: boolean;
+}
+
 export enum ArsStatus {
 	UNKNOWN,
 	AVAILABLE,

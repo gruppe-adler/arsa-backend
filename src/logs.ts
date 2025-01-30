@@ -1,5 +1,6 @@
 import { join } from '@std/path';
 import { directoryExists, fileExists } from './utils.ts';
+import { Log, ResultLogs } from './interfaces.ts';
 
 export function isValidLogDirName(logDirName: string): boolean {
 	const logDirNameRegEx = new RegExp(
@@ -25,25 +26,80 @@ export function isValidLogDirName(logDirName: string): boolean {
 }
 
 export async function getLogs(uuid: string) {
-	const dir = join(Deno.cwd(), 'profiles', uuid, 'logs');
+	const logsDir = join(Deno.cwd(), 'profiles', uuid, 'logs');
 
-	const logs: string[] = [];
+	const resultLogs: ResultLogs = {
+		success: false,
+		logs: [],
+		containsCrashReportsLog: false,
+	};
 
-	if (!await directoryExists(dir)) return logs;
+	if (!await directoryExists(logsDir)) return resultLogs;
 
 	try {
-		for await (const dirEntry of Deno.readDir(dir)) {
-			logs.push(dirEntry.name);
+		for await (const dirEntry of Deno.readDir(logsDir)) {
+			console.log(dirEntry.name);
+			const log: Log = {
+				dir: dirEntry.name,
+				containsConsoleLog: false,
+				containsScriptLog: false,
+				containsErrorLog: false,
+				containsCrashLog: false,
+			};
+
+			if (!await directoryExists(join(logsDir, dirEntry.name))) continue;
+
+			if (await fileExists(join(logsDir, dirEntry.name, 'console.log'))) {
+				log.containsConsoleLog = true;
+			}
+			if (await fileExists(join(logsDir, dirEntry.name, 'script.log'))) {
+				log.containsScriptLog = true;
+			}
+			if (await fileExists(join(logsDir, dirEntry.name, 'error.log'))) {
+				log.containsErrorLog = true;
+			}
+			if (await fileExists(join(logsDir, dirEntry.name, 'crash.log'))) {
+				log.containsCrashLog = true;
+			}
+
+			resultLogs.logs.push(log);
 		}
 	} catch (error) {
 		console.log(error);
 	}
 
-	return logs;
+	if (await fileExists(join(logsDir, 'CrashReports.log'))) {
+		resultLogs.containsCrashReportsLog = true;
+	}
+
+	resultLogs.success = true;
+
+	return resultLogs;
 }
 
 export async function getLogFile(uuid: string, log: string, file: string) {
 	const filePath = join(Deno.cwd(), 'profiles', uuid, 'logs', log, file);
+	if (!await fileExists(filePath)) return '';
+
+	let fileContent = '';
+
+	try {
+		fileContent = await Deno.readTextFile(filePath);
+	} catch (error) {
+		console.log(error);
+	}
+
+	return fileContent;
+}
+
+export async function getCrashReportsLog(uuid: string) {
+	const filePath = join(
+		Deno.cwd(),
+		'profiles',
+		uuid,
+		'logs',
+		'CrashReports.log',
+	);
 	if (!await fileExists(filePath)) return '';
 
 	let fileContent = '';

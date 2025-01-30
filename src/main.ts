@@ -11,10 +11,16 @@ import { ArmaReforgerServer } from './ars.ts';
 import { ArmaReforgerServerAdmin } from './arsa.ts';
 import { createSharedFolders, directoryExists, fileExists } from './utils.ts';
 import { getServer, getServers } from './servers.ts';
-import { getLogFile, getLogs, isValidLogDirName } from './logs.ts';
+import {
+	getCrashReportsLog,
+	getLogFile,
+	getLogs,
+	isValidLogDirName,
+} from './logs.ts';
 import type {
 	DockerStats,
 	PlayerIdentityId,
+	ResultLogs,
 	ResultSize,
 	Server,
 	ServerConfig,
@@ -112,22 +118,21 @@ if (import.meta.main) {
 	// route for getting names of existing log names (containing dates)
 	app.get('/api/server/:uuid/logs', async (c) => {
 		const uuid = c.req.param('uuid');
-		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
+		if (!uuidLib.validate(uuid)) {
+			return c.json({ success: false, error: 'UUID not valid' }, 404);
+		}
 
 		console.log(
 			`Getting Log Events for Arma Reforger Server with UUID: ${uuid}`,
 		);
 
-		let logs: string[] | null;
-
 		// getting logs
 		const ars = arsa.arsList.find((i) => i.uuid === uuid);
 		if (ars) {
-			logs = await getLogs(uuid);
-			return c.json(logs);
+			return c.json(await getLogs(uuid));
 		} else {
 			console.log(`Arma Reforger Server with UUID ${uuid} not found.`);
-			return c.json({ value: false }, 404);
+			return c.json({ success: false, error: 'UUID not found' }, 404);
 		}
 	});
 
@@ -138,7 +143,11 @@ if (import.meta.main) {
 		const { uuid, log, file } = c.req.param();
 		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
 		if (!isValidLogDirName(log)) return c.json({ value: false }, 404);
-		if (!['console.log', 'error.log', 'script.log'].includes(file)) {
+		if (
+			!['console.log', 'error.log', 'script.log', 'crash.log'].includes(
+				file,
+			)
+		) {
 			return c.json({ value: false }, 404);
 		}
 
@@ -146,6 +155,20 @@ if (import.meta.main) {
 			`Getting Log File ${log}/${file} for Arma Reforger Server with UUID: ${uuid}`,
 		);
 		const logFile = await getLogFile(uuid, log, file);
+		return c.json({ logFile });
+	});
+
+	/* ---------------------------------------- */
+
+	// route for getting the CrashReports.log
+	app.get('/api/server/:uuid/crash-reports-log', async (c) => {
+		const { uuid } = c.req.param();
+		if (!uuidLib.validate(uuid)) return c.json({ value: false }, 404);
+
+		console.log(
+			`Getting CrashReports.log for Arma Reforger Server with UUID: ${uuid}`,
+		);
+		const logFile = await getCrashReportsLog(uuid);
 		return c.json({ logFile });
 	});
 
