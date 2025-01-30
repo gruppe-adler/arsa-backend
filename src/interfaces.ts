@@ -121,6 +121,15 @@ export interface DockerStats {
 	PIDs: string;
 }
 
+export interface ResultSize {
+	profileDir: string;
+	serverDir: string;
+	modsDir: string;
+	logsDir: string;
+	allMods: string;
+	allLogs: string;
+}
+
 export enum ArsStatus {
 	UNKNOWN,
 	AVAILABLE,
