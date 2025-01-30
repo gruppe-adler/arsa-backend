@@ -381,7 +381,8 @@ export class ArmaReforgerServer {
 			cwd: join(Deno.cwd(), 'profiles', this.uuid, 'addons'),
 			args: [
 				'-h',
-				'--max-depth=1',
+				'-d',
+				'1',
 			],
 		});
 
@@ -398,7 +399,8 @@ export class ArmaReforgerServer {
 			cwd: join(Deno.cwd(), 'profiles', this.uuid, 'logs'),
 			args: [
 				'-h',
-				'--max-depth=1',
+				'-d',
+				'1',
 			],
 		});
 
