@@ -90,9 +90,12 @@ export class ArmaReforgerServerAdmin {
 		this.sendArsStatusUpdate();
 	}
 
-	async recreateARS() {
+	async recreateARS(steamAppId?: number) {
 		this.setArsStatus(ArsStatus.RECREATING);
 		this.sendArsStatusUpdate();
+
+		// Use provided steamAppId or default to stable version
+		const appId = steamAppId || 1874900;
 
 		// STEP 1
 		this.logAndSendMessage('Stopping all ars instances...');
@@ -150,13 +153,15 @@ export class ArmaReforgerServerAdmin {
 		}
 
 		// STEP 4
-		this.logAndSendMessage('Building new ars image...');
+		this.logAndSendMessage(`Building new ars image with Steam App ID ${appId}...`);
 		const commandBuild = new Deno.Command('docker', {
 			cwd: join(Deno.cwd(), 'ars'),
 			args: [
 				'buildx',
 				'build',
 				'--no-cache',
+				'--build-arg',
+				`STEAM_APP_ID=${appId}`,
 				'-t',
 				'ars',
 				'-f',

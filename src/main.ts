@@ -310,9 +310,33 @@ if (import.meta.main) {
 	app.get('/api/recreate-ars-docker-image', (c) => {
 		console.log('Recreating ARS docker image started...');
 
-		arsa.recreateARS();
+		// Get optional steamAppId query parameter
+		const steamAppId = c.req.query('steamAppId');
+		const appId = steamAppId ? parseInt(steamAppId, 10) : undefined;
+
+		arsa.recreateARS(appId);
 
 		return c.json({ value: true });
+	});
+
+	// route for recreating ARS docker image with specific Steam app ID
+	app.post('/api/recreate-ars-docker-image', async (c) => {
+		console.log('Recreating ARS docker image with specific app ID started...');
+
+		try {
+			const body = await c.req.json();
+			const steamAppId = body.steamAppId;
+
+			if (steamAppId && (steamAppId === 1874900 || steamAppId === 1890870)) {
+				arsa.recreateARS(steamAppId);
+				return c.json({ value: true, steamAppId });
+			} else {
+				return c.json({ error: 'Invalid steamAppId. Must be 1874900 (stable) or 1890870 (experimental)' }, 400);
+			}
+		} catch (error) {
+			console.error('Error parsing request body:', error);
+			return c.json({ error: 'Invalid request body' }, 400);
+		}
 	});
 
 	/* ---------------------------------------- */

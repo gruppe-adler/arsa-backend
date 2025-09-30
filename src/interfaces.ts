@@ -31,6 +31,7 @@ export interface ServerConfig {
 	bindPort: number;
 	publicAddress: string;
 	publicPort: number;
+	steamAppId: number;
 	a2s: {
 		address: string;
 		port: number;

@@ -1,11 +1,14 @@
 # steamcmd/steamcmd:latest is based on ubuntu
 FROM steamcmd/steamcmd:latest
 
+# Build argument for Steam app ID (defaults to stable Arma Reforger Server)
+ARG STEAM_APP_ID=1874900
+
 # set 'root' as current user
 USER root
 
 # install Arma Reforger Server with steamcmd to /ars
-RUN steamcmd +force_install_dir /ars +login anonymous +app_update 1874900 validate +quit
+RUN steamcmd +force_install_dir /ars +login anonymous +app_update ${STEAM_APP_ID} validate +quit
 
 # change owner of /ars to ubuntu user and group to allow executing it
 RUN chown -R ubuntu:ubuntu /ars
