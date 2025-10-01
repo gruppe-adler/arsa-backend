@@ -314,9 +314,13 @@ if (import.meta.main) {
 		const steamAppId = c.req.query('steamAppId');
 		const appId = steamAppId ? parseInt(steamAppId, 10) : undefined;
 
+		if (appId && (appId !== 1874900 && appId !== 1890870)) {
+			return c.json({ error: 'Invalid steamAppId. Must be 1874900 (stable) or 1890870 (experimental)' }, 400);
+		}
+
 		arsa.recreateARS(appId);
 
-		return c.json({ value: true });
+		return c.json({ value: true, steamAppId: appId || arsa.getSteamAppId() });
 	});
 
 	// route for recreating ARS docker image with specific Steam app ID
@@ -336,6 +340,35 @@ if (import.meta.main) {
 		} catch (error) {
 			console.error('Error parsing request body:', error);
 			return c.json({ error: 'Invalid request body' }, 400);
+		}
+	});
+
+	/* ---------------------------------------- */
+
+	// route for getting current Steam App ID setting
+	app.get('/api/steam-app-id', (c) => {
+		console.log('Getting current Steam App ID setting...');
+		const info = arsa.getDockerImageInfo();
+		return c.json(info);
+	});
+
+	// route for setting Steam App ID (without rebuilding)
+	app.post('/api/steam-app-id', async (c) => {
+		console.log('Setting Steam App ID...');
+
+		try {
+			const body = await c.req.json();
+			const steamAppId = body.steamAppId;
+
+			arsa.setSteamAppId(steamAppId);
+			return c.json({ 
+				value: true, 
+				steamAppId,
+				info: arsa.getDockerImageInfo()
+			});
+		} catch (error) {
+			console.error('Error setting Steam App ID:', error);
+			return c.json({ error: error.message || 'Invalid request' }, 400);
 		}
 	});
 

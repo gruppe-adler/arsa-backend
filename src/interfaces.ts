@@ -22,6 +22,7 @@ export interface Server {
 	uuid: string;
 	name: string;
 	isRunning: boolean;
+	steamAppId?: number; // Track which Steam App ID was used to build this server
 	config?: ServerConfig;
 	startupParameters: StartupParameter[];
 }
@@ -31,7 +32,6 @@ export interface ServerConfig {
 	bindPort: number;
 	publicAddress: string;
 	publicPort: number;
-	steamAppId: number;
 	a2s: {
 		address: string;
 		port: number;

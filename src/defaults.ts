@@ -5,7 +5,6 @@ export const defaultConfig: ServerConfig = {
 	bindPort: 2001,
 	publicAddress: '',
 	publicPort: 2001,
-	steamAppId: 1874900,
 	a2s: {
 		address: '0.0.0.0',
 		port: 17777,
@@ -175,6 +174,7 @@ export const defaultServer: Server = {
 	uuid: '',
 	name: '',
 	isRunning: false,
+	steamAppId: 1874900, // Default to stable version
 	config: defaultConfig,
 	startupParameters: StartupParameters,
 };

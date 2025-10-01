@@ -17,6 +17,8 @@ export class ArmaReforgerServerAdmin {
 	arsList: ArmaReforgerServer[] = [];
 	publicIp: string = '';
 	messageQueue: ServerStatusUpdate[] = [];
+	currentSteamAppId: number = 1874900; // Track current Steam App ID for Docker builds
+	lastDockerBuild?: { steamAppId: number; timestamp: number };
 
 	constructor() {
 		this.inspectARS();
@@ -94,8 +96,13 @@ export class ArmaReforgerServerAdmin {
 		this.setArsStatus(ArsStatus.RECREATING);
 		this.sendArsStatusUpdate();
 
-		// Use provided steamAppId or default to stable version
-		const appId = steamAppId || 1874900;
+		// Use provided steamAppId or current setting
+		const appId = steamAppId || this.currentSteamAppId;
+
+		// Update current setting if provided
+		if (steamAppId) {
+			this.currentSteamAppId = steamAppId;
+		}
 
 		// STEP 1
 		this.logAndSendMessage('Stopping all ars instances...');
@@ -208,8 +215,45 @@ export class ArmaReforgerServerAdmin {
 			return;
 		}
 
+		// Track successful build
+		this.lastDockerBuild = {
+			steamAppId: appId,
+			timestamp: Date.now(),
+		};
+
 		this.setArsStatus(ArsStatus.AVAILABLE);
 		this.sendArsStatusUpdate();
+	}
+
+	public getSteamAppId(): number {
+		return this.currentSteamAppId;
+	}
+
+	public setSteamAppId(steamAppId: number): void {
+		if (steamAppId !== 1874900 && steamAppId !== 1890870) {
+			throw new Error('Invalid steamAppId. Must be 1874900 (stable) or 1890870 (experimental)');
+		}
+		this.currentSteamAppId = steamAppId;
+	}
+
+	public getLastDockerBuild(): { steamAppId: number; timestamp: number } | undefined {
+		return this.lastDockerBuild;
+	}
+
+	public getDockerImageInfo(): { 
+		currentSteamAppId: number; 
+		lastBuild?: { steamAppId: number; timestamp: number };
+		needsRebuild: boolean;
+	} {
+		const needsRebuild = !this.lastDockerBuild || 
+			this.lastDockerBuild.steamAppId !== this.currentSteamAppId ||
+			this.arsStatus === ArsStatus.UNAVAILABLE;
+
+		return {
+			currentSteamAppId: this.currentSteamAppId,
+			lastBuild: this.lastDockerBuild,
+			needsRebuild,
+		};
 	}
 
 	logAndSendMessage(message: string) {

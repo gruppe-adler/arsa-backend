@@ -4,3 +4,4 @@ servers/
 notes.txt
 
 dist/
+app-config.json
