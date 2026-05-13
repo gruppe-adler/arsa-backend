@@ -1,6 +1,5 @@
-profiles/
-servers/
+/target
+/ars
+/.vscode
 
-notes.txt
-
-dist/
+*.sqlite

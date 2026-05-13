@@ -1,0 +1,36 @@
+[package]
+name = "arsa-backend-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bollard = "*"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+axum = { version = "0.8.8", features = ["ws"] }
+serde_json = "1.0"
+sea-orm = { version = "2.0.0-rc", features = [
+    "sqlx-sqlite",
+    "runtime-tokio",
+    "macros",
+    "schema-sync",
+    "entity-registry",
+    "with-json",
+] }
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0.101"
+tower-cookies = "0.11.0"
+axum-macros = "0.5.0"
+uuid = { version = "1", features = ["v4"] }
+local-ip-address = "0.6.10"
+utoipa = { version = "5.4.0", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+axum-extra = { version = "0.12.5", features = ["typed-header"] }
+tower-http = { version = "0.6.8", features = ["cors"] }
+fs_extra = "1.3.0"
+regex = "1.12.3"
+lazy_static = "1.5.0"
+async-regex = "0.1.1"
+utoipa-axum = "0.2.0"
+chrono = "0.4.44"
