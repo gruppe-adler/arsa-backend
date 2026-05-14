@@ -65,29 +65,59 @@ export class ArmaReforgerServerAdmin {
 		this.publicIp = await publicIpv4();
 	}
 
-	inspectARS() {
-		const commandDelete = new Deno.Command('docker', {
-			cwd: join(Deno.cwd(), 'ars'),
-			args: ['image', 'inspect', '-f', 'json', 'ars'],
-		});
-		const commandInspectOutput = commandDelete.outputSync();
-
-		if (commandInspectOutput.success) {
-			const jsonString = new TextDecoder().decode(
-				commandInspectOutput.stdout,
-			);
-			// console.log(jsonString);
-			console.log('ARS inspected successfully.');
-			this.arsInspect = JSON.parse(jsonString)[0];
-
-			this.setArsStatus(ArsStatus.AVAILABLE);
-		} else {
-			this.arsInspect = undefined;
-			if (this.arsStatus !== ArsStatus.RECREATING) {
-				this.setArsStatus(ArsStatus.UNAVAILABLE);
+	async runDockerCommand(args: string[]) {
+		try {
+			const command = new Deno.Command('docker', {
+				cwd: join(Deno.cwd(), 'ars'),
+				args,
+			});
+			return await command.output();
+		} catch (error) {
+			if (error instanceof Deno.errors.NotFound) {
+				this.logAndSendMessage(
+					'Docker executable not found. Install Docker and ensure `docker` is on PATH.',
+				);
+				this.setArsStatus(ArsStatus.RECREATING_FAILURE);
+				this.sendArsStatusUpdate();
+				return undefined;
 			}
+			throw error;
 		}
-		this.sendArsStatusUpdate();
+	}
+
+	inspectARS() {
+		try {
+			const commandDelete = new Deno.Command('docker', {
+				cwd: join(Deno.cwd(), 'ars'),
+				args: ['image', 'inspect', '-f', 'json', 'ars'],
+			});
+			const commandInspectOutput = commandDelete.outputSync();
+
+			if (commandInspectOutput.success) {
+				const jsonString = new TextDecoder().decode(
+					commandInspectOutput.stdout,
+				);
+				console.log('ARS inspected successfully.');
+				this.arsInspect = JSON.parse(jsonString)[0];
+
+				this.setArsStatus(ArsStatus.AVAILABLE);
+			} else {
+				this.arsInspect = undefined;
+				if (this.arsStatus !== ArsStatus.RECREATING) {
+					this.setArsStatus(ArsStatus.UNAVAILABLE);
+				}
+			}
+		} catch (error) {
+			if (error instanceof Deno.errors.NotFound) {
+				console.error('Docker executable not found. Install Docker and ensure `docker` is on PATH.');
+				this.arsInspect = undefined;
+				this.setArsStatus(ArsStatus.UNAVAILABLE);
+			} else {
+				throw error;
+			}
+		} finally {
+			this.sendArsStatusUpdate();
+		}
 	}
 
 	async recreateARS() {
@@ -106,11 +136,12 @@ export class ArmaReforgerServerAdmin {
 
 		// STEP 2
 		this.logAndSendMessage('Deleting current ars image...');
-		const commandDelete = new Deno.Command('docker', {
-			cwd: join(Deno.cwd(), 'ars'),
-			args: ['image', 'rm', 'ars'],
-		});
-		const commandDeleteOutput = await commandDelete.output();
+		const commandDeleteOutput = await this.runDockerCommand([
+			'image',
+			'rm',
+			'ars',
+		]);
+		if (!commandDeleteOutput) return;
 		if (commandDeleteOutput.success) {
 			this.logAndSendMessage('Current ars image deleted.');
 		} else {
@@ -129,11 +160,11 @@ export class ArmaReforgerServerAdmin {
 
 		// STEP 3
 		this.logAndSendMessage('Pulling latest steamcmd image...');
-		const commandPull = new Deno.Command('docker', {
-			cwd: join(Deno.cwd(), 'ars'),
-			args: ['pull', 'steamcmd/steamcmd:latest'],
-		});
-		const commandPullOutput = await commandPull.output();
+		const commandPullOutput = await this.runDockerCommand([
+			'pull',
+			'steamcmd/steamcmd:latest',
+		]);
+		if (!commandPullOutput) return;
 		if (commandPullOutput.success) {
 			this.logAndSendMessage('Latest steamcmd image pulled.');
 		} else {
@@ -151,20 +182,17 @@ export class ArmaReforgerServerAdmin {
 
 		// STEP 4
 		this.logAndSendMessage('Building new ars image...');
-		const commandBuild = new Deno.Command('docker', {
-			cwd: join(Deno.cwd(), 'ars'),
-			args: [
-				'buildx',
-				'build',
-				'--no-cache',
-				'-t',
-				'ars',
-				'-f',
-				'/app/ars/Dockerfile',
-				'.',
-			],
-		});
-		const commandBuildOutput = await commandBuild.output();
+		const commandBuildOutput = await this.runDockerCommand([
+			'buildx',
+			'build',
+			'--no-cache',
+			'-t',
+			'ars',
+			'-f',
+			'/app/ars/Dockerfile',
+			'.',
+		]);
+		if (!commandBuildOutput) return;
 		if (commandBuildOutput.success) {
 			this.logAndSendMessage('New ars image built.');
 		} else {
@@ -182,11 +210,14 @@ export class ArmaReforgerServerAdmin {
 
 		// STEP 5
 		this.logAndSendMessage('Inspecting ars image...');
-		const commandInspect = new Deno.Command('docker', {
-			cwd: join(Deno.cwd(), 'ars'),
-			args: ['image', 'inspect', '-f', 'json', 'ars'],
-		});
-		const commandInspectOutput = await commandInspect.output();
+		const commandInspectOutput = await this.runDockerCommand([
+			'image',
+			'inspect',
+			'-f',
+			'json',
+			'ars',
+		]);
+		if (!commandInspectOutput) return;
 		if (commandInspectOutput.success) {
 			this.logAndSendMessage('Successfully inspecting ars image.');
 		} else {
