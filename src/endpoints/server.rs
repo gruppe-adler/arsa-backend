@@ -1024,6 +1024,7 @@ pub async fn put_server(
     server.name = Set(params.name);
     server.is_running = Set(params.is_running);
     server.config = Set(params.config);
+    server.branch = Set(params.branch);
     server.startup_parameters_wrapper = Set(params.startup_parameters_wrapper);
 
     server.update(&state.db).await?.uuid;
