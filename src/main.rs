@@ -17,6 +17,7 @@ use local_ip_address::local_ip;
 use sea_orm::{Database, DatabaseConnection};
 use std::{
     net::{IpAddr, SocketAddr},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{
@@ -74,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
         .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
 
-    println!("This is my local IP address: {:?}", ip);
+    println!("Local IP address: {:?}", ip);
 
     let ars_path = crate::endpoints::server::get_ars_path();
     if !ars_path.exists() {
@@ -88,7 +89,19 @@ async fn main() -> anyhow::Result<()> {
         fs::create_dir_all(base_path).await?;
     }
 
-    let db = Database::connect("sqlite://./db/arsa.sqlite?mode=rwc").await?;
+    let db_path = PathBuf::from("./db/arsa.sqlite");
+    if !db_path.exists() {
+        if let Some(db_dir) = db_path.parent() {
+            fs::create_dir(db_dir).await?;
+        }
+        fs::File::create(&db_path).await?;
+    }
+
+    let db = Database::connect(format!(
+        "sqlite://{}?mode=rwc",
+        db_path.into_os_string().into_string().unwrap_or_default()
+    ))
+    .await?;
 
     db.get_schema_registry(module_path!().split("::").next().unwrap())
         .sync(&db)
@@ -115,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_pull_image))
         .routes(routes!(get_status));
 
-    let api_routes_v1 = OpenApiRouter::with_openapi(ApiDoc::openapi()).nest("/v1", server_routes);
+    let api_routes_v2 = OpenApiRouter::with_openapi(ApiDoc::openapi()).nest("/v2", server_routes);
 
     let (tx, _rx) = broadcast::channel(50);
     let app_state = Arc::new(AppState {
@@ -128,7 +141,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .nest("/api", api_routes_v1)
+        .nest("/api", api_routes_v2)
         .route("/ws", any(ws_handler))
         .layer(cors_layer)
         .with_state(app_state)
@@ -280,6 +293,7 @@ mod tests {
     const EXAMPLE_CONFIG: &str = r#"{
   "uuid": "",
   "name": "my server's name",
+  "branch": "stable",
   "isRunning": false,
   "config": {
     "bindAddress": "0.0.0.0",
