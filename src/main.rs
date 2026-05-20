@@ -126,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_servers))
         .routes(routes!(get_public_ip))
         .routes(routes!(get_pull_image))
+        .routes(routes!(get_image_version))
         .routes(routes!(get_status));
 
     let api_routes_v2 = OpenApiRouter::with_openapi(ApiDoc::openapi()).nest("/v2", server_routes);

@@ -74,6 +74,11 @@ pub struct IPv4Response {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct ImageVersionResponse {
+    pub version: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct SuccessResponse {
     pub success: bool,
 }

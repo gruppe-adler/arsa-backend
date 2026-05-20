@@ -219,7 +219,6 @@ pub async fn get_log_file(
     }
 
     let log_path = get_logs_path(&id, Some(log), Some(log_type)).await?;
-    dbg!(&log_path);
 
     let file_content = fs::read_to_string(log_path).await?;
     Ok(AppJson(FileContentResponse {
@@ -1070,6 +1069,65 @@ pub async fn get_public_ip(
     Ok(AppJson(IPv4Response {
         ipv4: state.ip.to_string(),
     }))
+}
+
+fn get_image_branch_as_string(branch: &Branch) -> String {
+    serde_json::to_string(branch)
+        .unwrap_or_default()
+        .trim_matches('"')
+        .to_string()
+}
+
+fn get_image_name(branch: &Branch) -> String {
+    let base_name = "thewillard/arsa-test";
+
+    format!("{}:{}", base_name, &get_image_branch_as_string(branch))
+}
+
+const VERSION_LABEL: &str = "de.grad.arsa.version";
+
+#[utoipa::path(
+    get,
+    tag = "arsa",
+    path = "/image-version/{branch}",
+    params(BranchParams),
+    responses((status = OK, body = ImageVersionResponse))
+)]
+pub async fn get_image_version(
+    State(state): State<Arc<AppState>>,
+    Path(branch): Path<BranchParams>,
+) -> Result<AppJson<ImageVersionResponse>, ArsaError> {
+    let inspect_result = state
+        .docker
+        .inspect_image(&get_image_name(&branch.branch))
+        .await;
+
+    let image_inspect = match inspect_result {
+        Ok(result) => result,
+        Err(err) => {
+            if let bollard::errors::Error::DockerResponseServerError {
+                status_code,
+                message: _,
+            } = &err
+                && *status_code == 404
+            {
+                return Err(ArsaError::NotFound);
+            } else {
+                return Err(err.into());
+            }
+        }
+    };
+
+    match image_inspect
+        .config
+        .and_then(|x| x.labels)
+        .and_then(|x| x.get(VERSION_LABEL).cloned())
+    {
+        Some(version) => Ok(AppJson(ImageVersionResponse {
+            version: version.to_owned(),
+        })),
+        None => Err(ArsaError::NotFound),
+    }
 }
 
 #[utoipa::path(
