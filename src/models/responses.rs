@@ -93,7 +93,7 @@ pub struct ErrorResponse {
     pub message: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all(serialize = "camelCase", deserialize = "camelCase"))]
 #[serde(rename_all_fields = "camelCase")]
@@ -104,6 +104,10 @@ pub enum ServerStatusUpdates {
     },
     ArsStatusUpdate {
         ars_status: super::server::ArsStatus,
+    },
+    PlayerCountUpdate {
+        uuid: String,
+        player_count: u32,
     },
     Message {
         message: String,

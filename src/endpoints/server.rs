@@ -2,7 +2,7 @@ use axum::extract::{Path, State};
 use bollard::{
     query_parameters::{
         CreateContainerOptionsBuilder, CreateImageOptions, InspectContainerOptionsBuilder,
-        StatsOptionsBuilder,
+        RemoveContainerOptionsBuilder, StatsOptionsBuilder,
     },
     secret::{
         ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, EndpointSettings,
@@ -523,6 +523,8 @@ pub async fn start_server(
         .await?
         .ok_or(ArsaError::NotFound)?;
 
+    server_update_player_count(&id, &state, 0).await?;
+
     let container_name = id.to_string();
 
     create_dirs(id).await?;
@@ -540,6 +542,16 @@ pub async fn start_server(
                     || container_status == ContainerStateStatusEnum::RESTARTING
                 {
                     return Ok(AppJson(SuccessResponse { success: true }));
+                } else {
+                    state
+                        .clone()
+                        .docker
+                        .remove_container(
+                            &container_name,
+                            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                        )
+                        .await?;
+                    create_server_container(state.clone(), id, &server).await?;
                 }
             }
         }
@@ -608,7 +620,7 @@ pub async fn start_server(
                     };
 
                     // Check the file for new players
-                    match check_path(&latest_log_file, &poll_state, file_position).await {
+                    match check_path(&server_uuid,&latest_log_file, &poll_state, file_position).await {
                         Ok(new_pos) => {
                             file_position = new_pos;
                         }
@@ -621,11 +633,54 @@ pub async fn start_server(
         }
     });
 
+    pub fn insert_new_players(line: &str, new_players: &mut HashMap<Uuid, String>) {
+        let Some(matches) = LOG_UUID_PLAYER_REGEX.captures(line) else {
+            return;
+        };
+
+        let Some(uuid) = matches
+            .name("uuid")
+            .and_then(|x| Uuid::parse_str(x.as_str()).ok())
+        else {
+            return;
+        };
+
+        let Some(name) = matches
+            .name("name")
+            .and_then(|x| Some(x.as_str().to_string()))
+        else {
+            return;
+        };
+
+        new_players.insert(uuid, name);
+    }
+
+    pub fn update_player_count(line: &str) -> Option<u32> {
+        if let Some(total_players_connected) =
+            LOG_PLAYERS_CONNECTED_REGEX.captures(line).and_then(|x| {
+                x.name("totalPlayers")
+                    .and_then(|x| x.as_str().parse::<u32>().ok())
+            })
+        {
+            return Some(total_players_connected);
+        }
+
+        if let Some(total_players) = LOG_TOTAL_PLAYERS_REGEX.captures(line).and_then(|x| {
+            x.name("totalPlayers")
+                .and_then(|x| x.as_str().parse::<u32>().ok())
+        }) {
+            return Some(total_players);
+        }
+
+        None
+    }
+
     pub async fn check_path(
+        uuid: &Uuid,
         path: &PathBuf,
         state: &Arc<AppState>,
         pos: u64,
-    ) -> Result<u64, anyhow::Error> {
+    ) -> Result<u64, ArsaError> {
         let file = File::open(path).await?;
 
         let mut buf = BufReader::new(file);
@@ -633,30 +688,17 @@ pub async fn start_server(
         buf.seek(SeekFrom::Start(pos)).await?;
 
         let mut new_players: HashMap<Uuid, String> = HashMap::new();
+        let mut current_player_count: Option<u32> = None;
         let mut line = String::new();
         while let Ok(size) = buf.read_line(&mut line).await {
             if size == 0 {
                 break;
             }
-            let Some(matches) = LOG_UUID_PLAYER_REGEX.captures(&line) else {
-                continue;
-            };
 
-            let Some(uuid) = matches
-                .name("uuid")
-                .and_then(|x| Uuid::parse_str(x.as_str()).ok())
-            else {
-                continue;
-            };
-
-            let Some(name) = matches
-                .name("name")
-                .and_then(|x| Some(x.as_str().to_string()))
-            else {
-                continue;
-            };
-
-            new_players.insert(uuid, name);
+            insert_new_players(&line, &mut new_players);
+            if let Some(player_count) = update_player_count(&line) {
+                current_player_count = Some(player_count);
+            }
         }
 
         let pos = buf.stream_position().await?;
@@ -675,6 +717,10 @@ pub async fn start_server(
             .exec(&state.db)
             .await?;
 
+        if let Some(player_count) = current_player_count {
+            server_update_player_count(uuid, state, player_count).await?;
+        }
+
         Ok(pos)
     }
 
@@ -683,6 +729,34 @@ pub async fn start_server(
     Ok(AppJson(SuccessResponse {
         success: is_running,
     }))
+}
+
+pub async fn server_update_player_count(
+    uuid: &Uuid,
+    state: &Arc<AppState>,
+    player_count: u32,
+) -> Result<(), ArsaError> {
+    match models::server::Entity::find_by_id(*uuid)
+        .one(&state.db)
+        .await?
+    {
+        Some(server) => {
+            let mut server: models::server::ActiveModel = server.into();
+
+            server.player_count = Set(player_count);
+
+            server.update(&state.db).await?;
+            send_message(
+                &state,
+                &ServerStatusUpdates::PlayerCountUpdate {
+                    uuid: uuid.to_string(),
+                    player_count,
+                },
+            )?;
+            Ok(())
+        }
+        None => Err(ArsaError::NotFound),
+    }
 }
 
 #[utoipa::path(
@@ -709,6 +783,8 @@ pub async fn stop_server(
     if let Some(cancel_token) = state.watchers.write().await.remove(&id) {
         cancel_token.cancel();
     }
+
+    server_update_player_count(&id, &state, 0).await?;
 
     let str_uuid = id.to_string();
     let stop_response = state.docker.stop_container(&str_uuid, None).await;
@@ -905,6 +981,7 @@ pub async fn post_server(
         name: Set(params.name.to_owned()),
         is_running: Set(params.is_running.to_owned()),
         branch: Set(params.branch),
+        player_count: Set(0),
         uuid: Set(Uuid::new_v4()),
         config: Set(params.config),
         startup_parameters_wrapper: Set(params.startup_parameters_wrapper),
@@ -1191,11 +1268,18 @@ pub static LOG_UUID_PLAYER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new("identityId=(?P<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) name=(?P<name>.*)").unwrap()
 });
 
+pub static LOG_PLAYERS_CONNECTED_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("Players connected: (?P<totalPlayers>\\d*) / \\d*").unwrap());
+
+pub static LOG_TOTAL_PLAYERS_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("Total number of players: (?P<totalPlayers>\\d*)").unwrap());
+
 // Helper functions
 pub fn send_message(
     state: &Arc<AppState>,
     status_update: &ServerStatusUpdates,
 ) -> Result<(), ArsaError> {
+    dbg!(&status_update);
     let _ = state
         .channel
         .send(serde_json::to_string(&status_update)?)
@@ -1414,9 +1498,9 @@ pub async fn create_server_container(
     }
 
     let config = ContainerCreateBody {
-        image: Some("thewillard/arsa-test:1.6.0.121".to_string()),
+        image: Some(get_image_name(&server.branch)),
         cmd: Some(args),
-        exposed_ports: Some(vec!["17777/udp".to_string()]),
+        // exposed_ports: Some(vec!["17777/udp".to_string()]),
         hostname: Some(container_name.to_string()),
         host_config: Some(host_config),
         networking_config: Some(s),

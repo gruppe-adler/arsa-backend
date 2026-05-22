@@ -31,6 +31,8 @@ pub struct Model {
     #[schema(default = "Branch::Stable")]
     pub branch: Branch,
 
+    pub player_count: u32,
+
     pub config: ServerConfig,
 
     #[serde(flatten)]

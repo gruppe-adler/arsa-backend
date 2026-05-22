@@ -296,6 +296,7 @@ mod tests {
   "name": "my server's name",
   "branch": "stable",
   "isRunning": false,
+  "playerCount": 1337,
   "config": {
     "bindAddress": "0.0.0.0",
     "bindPort": 2001,
