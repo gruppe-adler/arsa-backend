@@ -14,7 +14,7 @@ use axum_extra::{TypedHeader, headers};
 use bollard::Docker;
 use futures::{SinkExt, StreamExt};
 use local_ip_address::local_ip;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter};
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
@@ -89,22 +89,32 @@ async fn main() -> anyhow::Result<()> {
         fs::create_dir_all(base_path).await?;
     }
 
-    let db_path = PathBuf::from("./db/arsa.sqlite");
-    if !db_path.exists() {
-        if let Some(db_dir) = db_path.parent() {
-            fs::create_dir(db_dir).await?;
-        }
-        fs::File::create(&db_path).await?;
+    let db_dir = PathBuf::from("./db/");
+    if !db_dir.exists() {
+        fs::create_dir(&db_dir).await?;
+    }
+    let db_file_path = db_dir.join("arsa.sqlite");
+    if !db_file_path.exists() {
+        fs::File::create(&db_file_path).await?;
     }
 
     let db = Database::connect(format!(
         "sqlite://{}?mode=rwc",
-        db_path.into_os_string().into_string().unwrap_or_default()
+        db_file_path
+            .into_os_string()
+            .into_string()
+            .unwrap_or_default()
     ))
     .await?;
 
     db.get_schema_registry(module_path!().split("::").next().unwrap())
         .sync(&db)
+        .await?;
+
+    // Cleanup pull logs
+    models::pull_log::Entity::delete_many()
+        .filter(models::pull_log::Column::Id.is_not_null())
+        .exec(&db)
         .await?;
 
     let server_id_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())
@@ -126,6 +136,7 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_servers))
         .routes(routes!(get_public_ip))
         .routes(routes!(get_pull_image))
+        .routes(routes!(get_pull_logs))
         .routes(routes!(get_image_version))
         .routes(routes!(get_status));
 

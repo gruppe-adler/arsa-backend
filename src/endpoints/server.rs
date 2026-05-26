@@ -2,11 +2,12 @@ use axum::extract::{Path, State};
 use bollard::{
     query_parameters::{
         CreateContainerOptionsBuilder, CreateImageOptions, InspectContainerOptionsBuilder,
-        RemoveContainerOptionsBuilder, StatsOptionsBuilder,
+        ListContainersOptionsBuilder, RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder,
+        StatsOptionsBuilder,
     },
     secret::{
-        ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, EndpointSettings,
-        HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
+        ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, CreateImageInfo,
+        EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
     },
 };
 use chrono::DateTime;
@@ -14,7 +15,11 @@ use fs_extra::dir::get_size;
 use futures::StreamExt;
 use regex::Regex;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, FromJsonQueryResult, prelude::Uuid, sea_query,
+    ActiveModelTrait,
+    ActiveValue::Set,
+    ColumnTrait, EntityTrait, FromJsonQueryResult, IntoActiveModel, QueryFilter,
+    prelude::Uuid,
+    sea_query::{self, OnConflict},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -31,7 +36,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     AppState,
-    models::{self, player, requests::*, responses::*},
+    models::{self, player, requests::*, responses::*, server::ArsStatus},
     shared::{AppJson, ArsaError},
 };
 
@@ -1210,7 +1215,7 @@ pub async fn get_image_version(
 #[utoipa::path(
     get,
     tag = "arsa",
-    path = "/pull-image/{branch}",
+    path = "/pull/image/{branch}",
     params(BranchParams),
     responses((status = OK, body = SuccessResponse))
 )]
@@ -1218,24 +1223,63 @@ pub async fn get_pull_image(
     State(state): State<Arc<AppState>>,
     Path(branch): Path<BranchParams>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
-    use bollard::query_parameters::ListImagesOptionsBuilder;
-    let mut filters = HashMap::new();
-    filters.insert(
-        "reference".to_string(),
-        vec!["thewillard/arsa-test".to_string()],
-    );
+    if *(state.status.lock().await) == ArsStatus::Recreating {
+        return Err(ArsaError::BadRequest);
+    }
 
-    let _s = state.docker.list_images(Some(
-        ListImagesOptionsBuilder::new().filters(&filters).build(),
-    ));
+    let image_name = get_image_name(&branch.branch);
 
-    pull_image(
-        &state,
-        &serde_json::to_string(&branch.branch)
-            .unwrap_or_default()
-            .trim_matches('"'),
-    )
-    .await;
+    let inspect_result = state
+        .docker
+        .inspect_image(&get_image_name(&branch.branch))
+        .await;
+
+    if let Ok(inspect_result) = inspect_result {
+        let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+        filters.insert("ancestor".to_string(), vec![image_name.clone()]);
+
+        let containers = state
+            .docker
+            .list_containers(Some(
+                ListContainersOptionsBuilder::new()
+                    .all(true)
+                    .filters(&filters)
+                    .build(),
+            ))
+            .await?;
+
+        for container in containers {
+            let container_name = container
+                .names
+                .unwrap_or_default()
+                .first()
+                .cloned()
+                .unwrap_or_default();
+            let container_name = &container_name.trim_matches('/');
+            state.docker.stop_container(container_name, None).await?;
+
+            state
+                .docker
+                .remove_container(
+                    &container_name,
+                    Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                )
+                .await?;
+        }
+
+        if let Some(image_id) = inspect_result.id {
+            state
+                .docker
+                .remove_image(
+                    &image_id,
+                    Some(RemoveImageOptionsBuilder::new().force(true).build()),
+                    None,
+                )
+                .await?;
+        }
+    }
+
+    pull_image(&state, &branch.branch).await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -1279,7 +1323,6 @@ pub fn send_message(
     state: &Arc<AppState>,
     status_update: &ServerStatusUpdates,
 ) -> Result<(), ArsaError> {
-    dbg!(&status_update);
     let _ = state
         .channel
         .send(serde_json::to_string(&status_update)?)
@@ -1517,13 +1560,8 @@ async fn create_dirs(uuid: Uuid) -> Result<(), ArsaError> {
     Ok(())
 }
 
-pub async fn pull_image(state: &Arc<AppState>, branch: &str) {
-    if branch.is_empty() {
-        return;
-    }
-
-    let image_name = format!("thewillard/arsa-test:{branch}");
-
+pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
+    let image_name = get_image_name(branch);
     dbg!(&image_name);
 
     let mut create = state.docker.create_image(
@@ -1535,23 +1573,108 @@ pub async fn pull_image(state: &Arc<AppState>, branch: &str) {
         None,
     );
 
-    let _ = status_update(state, models::server::ArsStatus::Recreating).await;
+    if let Err(err) = status_update(state, models::server::ArsStatus::Recreating).await {
+        println!("{:?}", err);
+    }
+
+    let pull_id = Uuid::new_v4();
 
     let state = state.clone();
     tokio::spawn(async move {
         while let Some(msg) = create.next().await {
-            let msg = match msg {
-                Ok(create_image_info) => ServerStatusUpdates::CreateImageProgress {
-                    info: create_image_info,
-                },
-                Err(err) => ServerStatusUpdates::Error {
-                    error: err.to_string(),
-                },
-            };
-            let _ = send_message(&state, &msg);
+            if let Err(err) = send_pull_message(&state, &pull_id, msg).await {
+                println!("{:?}", err);
+            }
         }
-        let _ = status_update(&state, models::server::ArsStatus::Available).await;
+
+        if let Err(err) = send_message(
+            &state,
+            &ServerStatusUpdates::CreateImageFinished {
+                pull_id: pull_id.to_string(),
+            },
+        ) {
+            println!("{:?}", err);
+        }
+
+        if let Err(err) = status_update(&state, models::server::ArsStatus::Available).await {
+            println!("{:?}", err);
+        }
+
+        if let Err(err) = models::pull_log::Entity::delete_many()
+            .filter(models::pull_log::Column::PullId.contains(pull_id))
+            .exec(&state.db)
+            .await
+        {
+            println!("{:?}", err);
+        }
     });
+}
+
+pub async fn send_pull_message(
+    state: &Arc<AppState>,
+    pull_id: &Uuid,
+    msg: Result<CreateImageInfo, bollard::errors::Error>,
+) -> Result<(), ArsaError> {
+    let pull_log = match msg {
+        Ok(info) => {
+            let mut id = info.id.unwrap_or_default();
+            if id.is_empty() {
+                id = Uuid::new_v4().to_string();
+            }
+            models::pull_log::Model {
+                id: id,
+                pull_id: pull_id.clone(),
+                error_detail_code: info
+                    .error_detail
+                    .as_ref()
+                    .and_then(|x| x.code)
+                    .unwrap_or_default(),
+                error_detail_message: info
+                    .error_detail
+                    .and_then(|x| x.message)
+                    .unwrap_or_default(),
+                status: info.status.unwrap_or_default(),
+                progress_detail_current: info
+                    .progress_detail
+                    .as_ref()
+                    .and_then(|x| x.current)
+                    .unwrap_or_default(),
+                progress_detail_total: info
+                    .progress_detail
+                    .and_then(|x| x.total)
+                    .unwrap_or_default(),
+            }
+        }
+        Err(err) => models::pull_log::Model {
+            id: Uuid::new_v4().to_string(),
+            pull_id: pull_id.clone(),
+            error_detail_message: err.to_string(),
+            ..Default::default()
+        },
+    };
+
+    let _ = models::pull_log::Entity::insert(pull_log.clone().into_active_model())
+        .on_conflict(
+            OnConflict::column(models::pull_log::Column::Id)
+                .update_columns([
+                    models::pull_log::Column::PullId,
+                    models::pull_log::Column::Status,
+                    models::pull_log::Column::ProgressDetailCurrent,
+                    models::pull_log::Column::ProgressDetailTotal,
+                    models::pull_log::Column::ErrorDetailCode,
+                    models::pull_log::Column::ErrorDetailMessage,
+                ])
+                .to_owned(),
+        )
+        .exec(&state.db)
+        .await?;
+
+    send_message(
+        &state,
+        &ServerStatusUpdates::CreateImageProgress { info: pull_log },
+    )?;
+
+    Ok(())
 }
 
 pub async fn status_update(
@@ -1567,4 +1690,20 @@ pub async fn status_update(
     )?;
 
     Ok(())
+}
+
+#[utoipa::path(
+    get,
+    tag = "arsa",
+    path = "/pull/logs",
+    responses(
+        (status = OK, description = "Pull logs", body = Vec<models::pull_log::Model>),
+    )
+)]
+pub async fn get_pull_logs(
+    State(state): State<Arc<AppState>>,
+) -> Result<AppJson<Vec<models::pull_log::Model>>, ArsaError> {
+    let logs = models::pull_log::Entity::find().all(&state.db).await?;
+
+    Ok(AppJson(logs))
 }

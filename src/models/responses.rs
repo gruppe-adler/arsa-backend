@@ -1,7 +1,8 @@
-use bollard::secret::CreateImageInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::models;
 
 use super::player;
 
@@ -113,7 +114,10 @@ pub enum ServerStatusUpdates {
         message: String,
     },
     CreateImageProgress {
-        info: CreateImageInfo,
+        info: models::pull_log::Model,
+    },
+    CreateImageFinished {
+        pull_id: String,
     },
     Error {
         error: String,
