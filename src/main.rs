@@ -32,6 +32,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     endpoints::server::*,
+    endpoints::workshop::*,
     models::{responses::LogType, server::ArsStatus},
 };
 
@@ -140,7 +141,14 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_image_version))
         .routes(routes!(get_status));
 
-    let api_routes_v2 = OpenApiRouter::with_openapi(ApiDoc::openapi()).nest("/v2", server_routes);
+    let workshop_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .routes(routes!(get_workshop))
+        .routes(routes!(get_workshop_detail))
+        .routes(routes!(get_workshop_scenarios));
+
+    let api_routes_v2 = OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .nest("/v2", server_routes)
+        .nest("/v2", workshop_routes);
 
     let (tx, _rx) = broadcast::channel(50);
     let app_state = Arc::new(AppState {

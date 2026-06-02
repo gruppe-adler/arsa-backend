@@ -17,10 +17,10 @@ pub enum ArsaError {
     BollardError(bollard::errors::Error),
     NotFound,
     BadRequest,
-    #[allow(dead_code)]
-    UnknownError,
+    UnknownError(String),
     IOError(std::io::Error),
     FSExtra(fs_extra::error::Error),
+    ReqwestError(reqwest::Error),
 }
 
 impl IntoResponse for ArsaError {
@@ -40,9 +40,9 @@ impl IntoResponse for ArsaError {
                 StatusCode::NOT_FOUND.to_string(),
                 Some(self),
             ),
-            ArsaError::UnknownError => (
+            ArsaError::UnknownError(message) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+                message.clone(),
                 Some(self),
             ),
             ArsaError::SerdeError(error) => (
@@ -68,6 +68,11 @@ impl IntoResponse for ArsaError {
             ArsaError::BadRequest => (
                 StatusCode::BAD_REQUEST,
                 "Bad Request".to_string(),
+                Some(self),
+            ),
+            ArsaError::ReqwestError(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
                 Some(self),
             ),
         };
@@ -126,5 +131,11 @@ impl From<std::io::Error> for ArsaError {
 impl From<fs_extra::error::Error> for ArsaError {
     fn from(value: fs_extra::error::Error) -> Self {
         Self::FSExtra(value)
+    }
+}
+
+impl From<reqwest::Error> for ArsaError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::ReqwestError(value)
     }
 }
