@@ -28,7 +28,7 @@ use crate::shared::ArsaError;
         (status = OK, description = "Workshop assets returned successfully", body = WorkshopResponse),
         (status = BAD_REQUEST, description = "Upstream request failed",              body = ErrorResponse),
     ),
-    tag = "Workshop"
+    tag = "workshop"
 )]
 pub async fn get_workshop(
     Query(params): Query<WorkshopQuery>,
@@ -88,7 +88,7 @@ pub async fn get_workshop(
         (status = NOT_FOUND, description = "Asset not found",                       body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, description = "Upstream request failed",   body = ErrorResponse),
     ),
-    tag = "Workshop"
+    tag = "workshop"
 )]
 pub async fn get_workshop_detail(
     Path(id): Path<String>,
@@ -151,7 +151,7 @@ pub async fn get_workshop_detail(
         (status = NOT_FOUND, description = "Asset not found", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, description = "Upstream request failed", body = ErrorResponse),
     ),
-    tag = "Workshop"
+    tag = "workshop"
 )]
 pub async fn get_workshop_scenarios(
     Path(id): Path<String>,

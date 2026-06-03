@@ -31,6 +31,7 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
+    endpoints::image::*,
     endpoints::server::*,
     endpoints::workshop::*,
     models::{responses::LogType, server::ArsStatus},
@@ -42,9 +43,11 @@ mod shared;
 
 #[derive(OpenApi)]
 #[openapi(
-    components(schemas(LogType, Branch)),
+    components(schemas(LogType, Branch, ListScenariosResponse)),
     tags(
-        (name = "arsa", description = "ARSA API endpoints"),
+        (name = "server", description = "Server api endpoints"),
+        (name = "workshop", description = "Workshop api"),
+        (name = "image", description = "Docker image endpoints")
     )
 )]
 struct ApiDoc;
@@ -139,6 +142,8 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_pull_image))
         .routes(routes!(get_pull_logs))
         .routes(routes!(get_image_version))
+        .routes(routes!(update_scenarios_from_branch))
+        .routes(routes!(get_scenarios_from_branch))
         .routes(routes!(get_status));
 
     let workshop_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())

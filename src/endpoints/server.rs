@@ -1,13 +1,12 @@
 use axum::extract::{Path, State};
 use bollard::{
     query_parameters::{
-        CreateContainerOptionsBuilder, CreateImageOptions, InspectContainerOptionsBuilder,
-        ListContainersOptionsBuilder, RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder,
-        StatsOptionsBuilder,
+        CreateContainerOptionsBuilder, InspectContainerOptionsBuilder,
+        RemoveContainerOptionsBuilder, StatsOptionsBuilder,
     },
     secret::{
-        ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, CreateImageInfo,
-        EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
+        ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, EndpointSettings,
+        HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
     },
 };
 use chrono::DateTime;
@@ -17,9 +16,9 @@ use regex::Regex;
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, EntityTrait, FromJsonQueryResult, IntoActiveModel, QueryFilter,
+    EntityTrait, FromJsonQueryResult,
     prelude::Uuid,
-    sea_query::{self, OnConflict},
+    sea_query::{self},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -36,7 +35,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     AppState,
-    models::{self, player, requests::*, responses::*, server::ArsStatus},
+    models::{self, player, requests::*, responses::*},
     shared::{AppJson, ArsaError},
 };
 
@@ -61,6 +60,20 @@ pub struct BranchParams {
     /// Branch to pull
     #[param(example = "stable")]
     pub branch: Branch,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListScenariosResponse {
+    pub branch: Branch,
+    pub scenarios: Vec<ScenarioEntry>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioEntry {
+    pub path: String,
+    pub name: String,
 }
 
 #[allow(dead_code)] // Needed for utoipa
@@ -141,7 +154,7 @@ pub fn get_ars_path() -> PathBuf {
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/logs",
     params(IdParams),
     responses(
@@ -201,7 +214,7 @@ pub async fn get_logs(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/logs/{log}/{log_type}",
     params(IdParams, LogFileParams),
     responses(
@@ -226,14 +239,12 @@ pub async fn get_log_file(
     let log_path = get_logs_path(&id, Some(log), Some(log_type)).await?;
 
     let file_content = fs::read_to_string(log_path).await?;
-    Ok(AppJson(FileContentResponse {
-        file_content: file_content,
-    }))
+    Ok(AppJson(FileContentResponse { file_content }))
 }
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/crash-reports-log",
     params(IdParams),
     responses(
@@ -266,7 +277,7 @@ pub async fn get_crash_log(
 #[utoipa::path(
     delete,
     path = "/{id}/logs/{log}",
-    tag = "arsa",
+    tag = "server",
     params(IdParams),
     responses(
         (status = OK, description = "The log was deleted", body = SuccessResponse),
@@ -299,7 +310,7 @@ pub async fn delete_log(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/known-players",
     responses(
         (status = OK, description = "List of known players", body = Vec<PlayerIdentityId>),
@@ -362,7 +373,7 @@ fn calculate_cpu_percentage(stats: &ContainerStatsResponse) -> f64 {
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/stats",
     params(IdParams),
     responses(
@@ -483,7 +494,7 @@ async fn get_all_files_from_path(path: &PathBuf) -> Result<Vec<String>, ArsaErro
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/size",
     params(IdParams),
     responses(
@@ -512,7 +523,7 @@ pub async fn get_size_method(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/start", params(IdParams),
     responses(
         (status = OK, description = "Server was started and/or is running", body = SuccessResponse),
@@ -766,7 +777,7 @@ pub async fn server_update_player_count(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/stop",
     params(IdParams),
     responses(
@@ -815,7 +826,7 @@ pub async fn stop_server(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}/is-running",
     params(IdParams),
     responses(
@@ -841,7 +852,7 @@ pub async fn is_server_running(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}",
     params(IdParams),
     responses(
@@ -861,7 +872,7 @@ pub async fn get_server(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "",
     responses(
         (status = OK, description = "List of all servers", body = Vec<models::server::Model>)
@@ -889,7 +900,7 @@ pub struct UuidResponse {
 
 #[utoipa::path(
     post,
-    tag = "arsa",
+    tag = "server",
     path = "/server",
     request_body(
         description = "Server configuration to create a new server",
@@ -1003,7 +1014,7 @@ pub async fn post_server(
 #[utoipa::path(
     put,
     path = "/server",
-    tag = "arsa",
+    tag = "server",
     request_body(
         description = "Server configuration to create a new server",
         content = inline(models::server::Model),
@@ -1117,7 +1128,7 @@ pub async fn put_server(
 
 #[utoipa::path(
     delete,
-    tag = "arsa",
+    tag = "server",
     path = "/{id}",
     params(IdParams),
     responses(
@@ -1141,7 +1152,7 @@ pub async fn delete_server(
 
 #[utoipa::path(
     get,
-    tag = "arsa",
+    tag = "server",
     path = "/public-ip",
     responses((status = OK, description = "The public IPv4 for this server", body = IPv4Response))
 )]
@@ -1153,170 +1164,46 @@ pub async fn get_public_ip(
     }))
 }
 
-fn get_image_branch_as_string(branch: &Branch) -> String {
+pub fn get_image_branch_as_string(branch: &Branch) -> String {
     serde_json::to_string(branch)
         .unwrap_or_default()
         .trim_matches('"')
         .to_string()
 }
 
-fn get_image_name(branch: &Branch) -> String {
+pub fn get_image_name(branch: &Branch) -> String {
     let base_name = "thewillard/arsa-test";
 
     format!("{}:{}", base_name, &get_image_branch_as_string(branch))
 }
 
-const VERSION_LABEL: &str = "de.grad.arsa.version";
-
-#[utoipa::path(
-    get,
-    tag = "arsa",
-    path = "/image-version/{branch}",
-    params(BranchParams),
-    responses((status = OK, body = ImageVersionResponse))
-)]
-pub async fn get_image_version(
-    State(state): State<Arc<AppState>>,
-    Path(branch): Path<BranchParams>,
-) -> Result<AppJson<ImageVersionResponse>, ArsaError> {
-    let inspect_result = state
-        .docker
-        .inspect_image(&get_image_name(&branch.branch))
-        .await;
-
-    let image_inspect = match inspect_result {
-        Ok(result) => result,
-        Err(err) => {
-            if let bollard::errors::Error::DockerResponseServerError {
-                status_code,
-                message: _,
-            } = &err
-                && *status_code == 404
-            {
-                return Err(ArsaError::NotFound);
-            } else {
-                return Err(err.into());
-            }
-        }
-    };
-
-    match image_inspect
-        .config
-        .and_then(|x| x.labels)
-        .and_then(|x| x.get(VERSION_LABEL).cloned())
-    {
-        Some(version) => Ok(AppJson(ImageVersionResponse {
-            version: version.to_owned(),
-        })),
-        None => Err(ArsaError::NotFound),
-    }
-}
-
-#[utoipa::path(
-    get,
-    tag = "arsa",
-    path = "/pull/image/{branch}",
-    params(BranchParams),
-    responses((status = OK, body = SuccessResponse))
-)]
-pub async fn get_pull_image(
-    State(state): State<Arc<AppState>>,
-    Path(branch): Path<BranchParams>,
-) -> Result<AppJson<SuccessResponse>, ArsaError> {
-    if *(state.status.lock().await) == ArsStatus::Recreating {
-        return Err(ArsaError::BadRequest);
-    }
-
-    let image_name = get_image_name(&branch.branch);
-
-    let inspect_result = state
-        .docker
-        .inspect_image(&get_image_name(&branch.branch))
-        .await;
-
-    if let Ok(inspect_result) = inspect_result {
-        let mut filters: HashMap<String, Vec<String>> = HashMap::new();
-        filters.insert("ancestor".to_string(), vec![image_name.clone()]);
-
-        let containers = state
-            .docker
-            .list_containers(Some(
-                ListContainersOptionsBuilder::new()
-                    .all(true)
-                    .filters(&filters)
-                    .build(),
-            ))
-            .await?;
-
-        for container in containers {
-            let container_name = container
-                .names
-                .unwrap_or_default()
-                .first()
-                .cloned()
-                .unwrap_or_default();
-            let container_name = &container_name.trim_matches('/');
-            state.docker.stop_container(container_name, None).await?;
-
-            state
-                .docker
-                .remove_container(
-                    &container_name,
-                    Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-                )
-                .await?;
-        }
-
-        if let Some(image_id) = inspect_result.id {
-            state
-                .docker
-                .remove_image(
-                    &image_id,
-                    Some(RemoveImageOptionsBuilder::new().force(true).build()),
-                    None,
-                )
-                .await?;
-        }
-    }
-
-    pull_image(&state, &branch.branch).await;
-
-    Ok(AppJson(SuccessResponse { success: true }))
-}
-
-#[utoipa::path(
-    get,
-    tag = "arsa",
-    path = "/status",
-    responses((status = OK, body = crate::models::server::ArsStatus))
-)]
-pub async fn get_status(
-    State(state): State<Arc<AppState>>,
-) -> Result<AppJson<crate::models::server::ArsStatus>, ArsaError> {
-    send_message(
-        &state,
-        &ServerStatusUpdates::Message {
-            message: "Status send".to_string(),
-        },
-    )?;
-
-    Ok(AppJson(state.status.lock().await.clone()))
-}
-
 // Regex patterns
 pub static LOG_DIR_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new("^logs_([0-9]{4})-([0-9]{2})-([0-9]{2})_([0-9]{2})-([0-9]{2})-([0-9]{2})$").unwrap()
+    Regex::new("^logs_([0-9]{4})-([0-9]{2})-([0-9]{2})_([0-9]{2})-([0-9]{2})-([0-9]{2})$")
+        .expect("Regex is invalid")
 });
 
 pub static LOG_UUID_PLAYER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new("identityId=(?P<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) name=(?P<name>.*)").unwrap()
+    Regex::new("identityId=(?P<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) name=(?P<name>.*)")  .expect("Regex is invalid")
 });
 
-pub static LOG_PLAYERS_CONNECTED_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new("Players connected: (?P<totalPlayers>\\d*) / \\d*").unwrap());
+pub static LOG_PLAYERS_CONNECTED_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new("Players connected: (?P<totalPlayers>\\d*) / \\d*").expect("Regex is invalid")
+});
 
-pub static LOG_TOTAL_PLAYERS_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new("Total number of players: (?P<totalPlayers>\\d*)").unwrap());
+pub static LOG_TOTAL_PLAYERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new("Total number of players: (?P<totalPlayers>\\d*)").expect("Regex is invalid")
+});
+
+pub static LOG_SCENARIOS_COUNT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(".Official scenarios \\((?P<MissionCount>\\d*) entries\\)")
+        .expect("Regex is invalid")
+});
+
+pub static LOG_SCENARIOS_MISSION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?P<Path>\{[a-zA-Z0-9]{16}\}Missions/.*\.conf) \((?P<Name>.*)\)")
+        .expect("Regex is invalid")
+});
 
 // Helper functions
 pub fn send_message(
@@ -1558,152 +1445,4 @@ async fn create_dirs(uuid: Uuid) -> Result<(), ArsaError> {
     fs::create_dir_all(get_config_path(&uuid).await?).await?;
     fs::create_dir_all(get_profiles_path(&uuid).await?).await?;
     Ok(())
-}
-
-pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
-    let image_name = get_image_name(branch);
-    dbg!(&image_name);
-
-    let mut create = state.docker.create_image(
-        Some(CreateImageOptions {
-            from_image: Some(image_name.to_owned()),
-            ..Default::default()
-        }),
-        None,
-        None,
-    );
-
-    if let Err(err) = status_update(state, models::server::ArsStatus::Recreating).await {
-        println!("{:?}", err);
-    }
-
-    let pull_id = Uuid::new_v4();
-
-    let state = state.clone();
-    tokio::spawn(async move {
-        while let Some(msg) = create.next().await {
-            if let Err(err) = send_pull_message(&state, &pull_id, msg).await {
-                println!("{:?}", err);
-            }
-        }
-
-        if let Err(err) = send_message(
-            &state,
-            &ServerStatusUpdates::CreateImageFinished {
-                pull_id: pull_id.to_string(),
-            },
-        ) {
-            println!("{:?}", err);
-        }
-
-        if let Err(err) = status_update(&state, models::server::ArsStatus::Available).await {
-            println!("{:?}", err);
-        }
-
-        if let Err(err) = models::pull_log::Entity::delete_many()
-            .filter(models::pull_log::Column::PullId.contains(pull_id))
-            .exec(&state.db)
-            .await
-        {
-            println!("{:?}", err);
-        }
-    });
-}
-
-pub async fn send_pull_message(
-    state: &Arc<AppState>,
-    pull_id: &Uuid,
-    msg: Result<CreateImageInfo, bollard::errors::Error>,
-) -> Result<(), ArsaError> {
-    let pull_log = match msg {
-        Ok(info) => {
-            let mut id = info.id.unwrap_or_default();
-            if id.is_empty() {
-                id = Uuid::new_v4().to_string();
-            }
-            models::pull_log::Model {
-                id: id,
-                pull_id: pull_id.clone(),
-                error_detail_code: info
-                    .error_detail
-                    .as_ref()
-                    .and_then(|x| x.code)
-                    .unwrap_or_default(),
-                error_detail_message: info
-                    .error_detail
-                    .and_then(|x| x.message)
-                    .unwrap_or_default(),
-                status: info.status.unwrap_or_default(),
-                progress_detail_current: info
-                    .progress_detail
-                    .as_ref()
-                    .and_then(|x| x.current)
-                    .unwrap_or_default(),
-                progress_detail_total: info
-                    .progress_detail
-                    .and_then(|x| x.total)
-                    .unwrap_or_default(),
-            }
-        }
-        Err(err) => models::pull_log::Model {
-            id: Uuid::new_v4().to_string(),
-            pull_id: pull_id.clone(),
-            error_detail_message: err.to_string(),
-            ..Default::default()
-        },
-    };
-
-    let _ = models::pull_log::Entity::insert(pull_log.clone().into_active_model())
-        .on_conflict(
-            OnConflict::column(models::pull_log::Column::Id)
-                .update_columns([
-                    models::pull_log::Column::PullId,
-                    models::pull_log::Column::Status,
-                    models::pull_log::Column::ProgressDetailCurrent,
-                    models::pull_log::Column::ProgressDetailTotal,
-                    models::pull_log::Column::ErrorDetailCode,
-                    models::pull_log::Column::ErrorDetailMessage,
-                ])
-                .to_owned(),
-        )
-        .exec(&state.db)
-        .await?;
-
-    send_message(
-        &state,
-        &ServerStatusUpdates::CreateImageProgress { info: pull_log },
-    )?;
-
-    Ok(())
-}
-
-pub async fn status_update(
-    state: &Arc<AppState>,
-    status: models::server::ArsStatus,
-) -> Result<(), ArsaError> {
-    let mut status_lock = state.status.lock().await;
-    *status_lock = status.clone();
-
-    send_message(
-        state,
-        &ServerStatusUpdates::ArsStatusUpdate { ars_status: status },
-    )?;
-
-    Ok(())
-}
-
-#[utoipa::path(
-    get,
-    tag = "arsa",
-    path = "/pull/logs",
-    responses(
-        (status = OK, description = "Pull logs", body = Vec<models::pull_log::Model>),
-    )
-)]
-pub async fn get_pull_logs(
-    State(state): State<Arc<AppState>>,
-) -> Result<AppJson<Vec<models::pull_log::Model>>, ArsaError> {
-    let logs = models::pull_log::Entity::find().all(&state.db).await?;
-
-    Ok(AppJson(logs))
 }
