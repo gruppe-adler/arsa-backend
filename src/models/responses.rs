@@ -89,6 +89,12 @@ pub struct FileContentResponse {
     pub file_content: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileFileListResponse {
+    pub files: Vec<String>,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
     pub message: String,

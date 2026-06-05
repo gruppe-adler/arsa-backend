@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Json, Path, State};
 use bollard::{
     query_parameters::{
         CreateContainerOptionsBuilder, InspectContainerOptionsBuilder,
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     env,
-    path::PathBuf,
+    path::{Component, PathBuf},
     sync::{Arc, LazyLock},
 };
 use tokio::{
@@ -36,7 +36,10 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     AppState,
     models::{self, player, requests::*, responses::*},
-    shared::{AppJson, ArsaError},
+    shared::{
+        AppJson,
+        ArsaError::{self, BadRequest},
+    },
 };
 
 #[derive(
@@ -126,6 +129,42 @@ async fn get_profiles_path(uuid: &Uuid) -> Result<PathBuf, ArsaError> {
 
 async fn get_profile_path(uuid: &Uuid) -> Result<PathBuf, ArsaError> {
     Ok(get_profiles_path(uuid).await?.join("profile"))
+}
+
+async fn get_profile_file_path(uuid: &Uuid, user_input: &str) -> Result<PathBuf, ArsaError> {
+    let profile_path = get_profile_path(uuid).await?;
+
+    let profile_path = profile_path
+        .canonicalize()
+        .map_err(|_| ArsaError::BadRequest)?;
+
+    // Strip any leading slash so the user can't anchor to root
+    let trimmed = user_input.trim_start_matches('/');
+
+    // Reject obviously suspicious components before touching the FS
+    let requested = std::path::Path::new(trimmed);
+    for component in requested.components() {
+        match component {
+            Component::Normal(_) => {}          // fine
+            Component::CurDir => {}             // "." – harmless, skip
+            Component::ParentDir |              // ".." – escape attempt
+            Component::RootDir |               // absolute anchor
+            Component::Prefix(_) => return Err(BadRequest), // Windows drive letters
+        }
+    }
+
+    // Build the candidate path and canonicalize it (resolves symlinks too)
+    let candidate = profile_path.join(trimmed);
+    let resolved = candidate
+        .canonicalize()
+        .map_err(|_| ArsaError::BadRequest)?;
+
+    // The critical check: resolved path must still be inside base
+    if resolved.starts_with(&profile_path) {
+        Ok(resolved)
+    } else {
+        Err(BadRequest)
+    }
 }
 
 async fn get_addons_path(uuid: &Uuid) -> Result<PathBuf, ArsaError> {
@@ -519,6 +558,101 @@ pub async fn get_size_method(
         mods: get_all_files_from_path(&addons_path).await?,
         logs: get_all_files_from_path(&logs_path).await?,
     }))
+}
+
+#[utoipa::path(
+    get,
+    tag = "server",
+    path = "/{id}/profile",
+    params(IdParams),
+    responses(
+        (status = OK, description = "List files in the profile directory", body = ProfileFileListResponse),
+        (status = NOT_FOUND, description = "Server was not found", body = ErrorResponse)
+    )
+)]
+pub async fn get_profile_files(
+    State(state): State<Arc<AppState>>,
+    Path(IdParams { id }): Path<IdParams>,
+) -> Result<AppJson<ProfileFileListResponse>, ArsaError> {
+    let _ = models::server::Entity::find_by_id(id)
+        .one(&state.db)
+        .await?
+        .ok_or(ArsaError::NotFound)?;
+
+    let profile_path = get_profile_path(&id).await?;
+    let files = if profile_path.exists() {
+        get_names_in_dir_recursive(&profile_path, &profile_path).await?
+    } else {
+        Vec::new()
+    };
+
+    Ok(AppJson(ProfileFileListResponse { files }))
+}
+
+#[utoipa::path(
+    get,
+    tag = "server",
+    path = "/{id}/profile/{path}",
+    params(
+        ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
+        ("path" = String, Path, description = "Relative path inside the profile directory", example = "some.file")
+    ),
+    responses(
+        (status = OK, description = "Profile file content", body = FileContentResponse),
+        (status = NOT_FOUND, description = "File or server was not found", body = ErrorResponse),
+        (status = BAD_REQUEST, description = "Invalid profile file path", body = ErrorResponse)
+    )
+)]
+pub async fn get_profile_file(
+    State(state): State<Arc<AppState>>,
+    Path((uuid, path)): Path<(Uuid, String)>,
+) -> Result<AppJson<FileContentResponse>, ArsaError> {
+    let _ = models::server::Entity::find_by_id(uuid)
+        .one(&state.db)
+        .await?
+        .ok_or(ArsaError::NotFound)?;
+
+    let profile_file_path = get_profile_file_path(&uuid, &path).await?;
+    if !profile_file_path.exists() || profile_file_path.is_dir() {
+        return Err(ArsaError::NotFound);
+    }
+
+    let file_content = fs::read_to_string(profile_file_path).await?;
+    Ok(AppJson(FileContentResponse { file_content }))
+}
+
+#[utoipa::path(
+    put,
+    tag = "server",
+    path = "/{id}/profile/{path}",
+    params(
+        ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
+        ("path" = String, Path, description = "Relative path inside the profile directory", example = "settings.lua")
+    ),
+    request_body = EditProfileFileRequest,
+    responses(
+        (status = OK, description = "Profile file was written", body = SuccessResponse),
+        (status = NOT_FOUND, description = "Server was not found", body = ErrorResponse),
+        (status = BAD_REQUEST, description = "Invalid profile file path", body = ErrorResponse)
+    )
+)]
+pub async fn put_profile_file(
+    State(state): State<Arc<AppState>>,
+    Path((uuid, path)): Path<(Uuid, String)>,
+    Json(request): Json<EditProfileFileRequest>,
+) -> Result<AppJson<SuccessResponse>, ArsaError> {
+    let _ = models::server::Entity::find_by_id(uuid)
+        .one(&state.db)
+        .await?
+        .ok_or(ArsaError::NotFound)?;
+
+    let profile_file_path = get_profile_file_path(&uuid, &path).await?;
+    if let Some(parent) = profile_file_path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
+    fs::write(profile_file_path, request.file_content).await?;
+    Ok(AppJson(SuccessResponse { success: true }))
 }
 
 #[utoipa::path(
@@ -1282,6 +1416,26 @@ pub async fn get_names_in_dir(path: &PathBuf) -> Result<Vec<String>, ArsaError> 
         }
     }
     Ok(names)
+}
+
+pub async fn get_names_in_dir_recursive(
+    base: &PathBuf,
+    dir: &PathBuf,
+) -> Result<Vec<String>, ArsaError> {
+    let mut files = Vec::new();
+
+    if let Ok(mut read_dir) = fs::read_dir(dir).await {
+        while let Some(entry) = read_dir.next_entry().await? {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(Box::pin(get_names_in_dir_recursive(base, &path)).await?);
+            } else if let Ok(rel) = path.strip_prefix(base) {
+                files.push(rel.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    Ok(files)
 }
 
 pub async fn find_latest_log_file(logs_dir: &PathBuf) -> Result<Option<PathBuf>, ArsaError> {

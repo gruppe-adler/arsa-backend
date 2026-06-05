@@ -8,7 +8,7 @@ use axum::{
         header::{AUTHORIZATION, CONTENT_TYPE},
     },
     response::IntoResponse,
-    routing::any,
+    routing::{any, get},
 };
 use axum_extra::{TypedHeader, headers};
 use bollard::Docker;
@@ -34,7 +34,10 @@ use crate::{
     endpoints::image::*,
     endpoints::server::*,
     endpoints::workshop::*,
-    models::{responses::LogType, server::ArsStatus},
+    models::{
+        requests::EditProfileFileRequest, responses::LogType, responses::ProfileFileListResponse,
+        server::ArsStatus,
+    },
 };
 
 mod endpoints;
@@ -43,11 +46,15 @@ mod shared;
 
 #[derive(OpenApi)]
 #[openapi(
-    components(schemas(LogType, Branch, ListScenariosResponse)),
+    components(schemas(LogType, Branch, ListScenariosResponse, ProfileFileListResponse, EditProfileFileRequest)),
     tags(
         (name = "server", description = "Server api endpoints"),
         (name = "workshop", description = "Workshop api"),
         (name = "image", description = "Docker image endpoints")
+    ),
+    paths(
+        get_profile_file,
+        put_profile_file
     )
 )]
 struct ApiDoc;
@@ -132,6 +139,11 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_player_log))
         .routes(routes!(get_stats))
         .routes(routes!(get_size_method))
+        .routes(routes!(get_profile_files))
+        .route(
+            "/{id}/profile/{*path}",
+            get(get_profile_file).put(put_profile_file),
+        )
         .routes(routes!(is_server_running));
 
     let server_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())
