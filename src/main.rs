@@ -256,19 +256,16 @@ async fn handle_socket(socket: WebSocket, _who: SocketAddr, state: Arc<AppState>
 
     while let Some(msg) = receiver.next().await {
         if let Ok(msg) = msg {
-            match msg {
-                Message::Text(txt) => {
-                    if txt == "ping" {
-                        let _ = sender
-                            .lock()
-                            .await
-                            .send(Message::Text("pong".to_string().into()))
-                            .await;
-                    } else {
-                        println!("Received unknown WebSocket message: {txt}");
-                    }
+            if let Message::Text(txt) = msg {
+                if txt == "ping" {
+                    let _ = sender
+                        .lock()
+                        .await
+                        .send(Message::Text("pong".to_string().into()))
+                        .await;
+                } else {
+                    println!("Received unknown WebSocket message: {txt}");
                 }
-                _ => {}
             }
         } else {
             let error = msg.err().unwrap();

@@ -223,23 +223,21 @@ pub async fn get_logs(
 
     let log_dir = logs_dir.read_dir()?;
 
-    for entry in log_dir {
-        if let Ok(entry) = entry {
-            let entry_path = entry.path();
-            let entry_name = entry_path
-                .file_name()
-                .and_then(|x| x.to_os_string().into_string().ok())
-                .unwrap_or_default();
+    for entry in log_dir.flatten() {
+        let entry_path = entry.path();
+        let entry_name = entry_path
+            .file_name()
+            .and_then(|x| x.to_os_string().into_string().ok())
+            .unwrap_or_default();
 
-            let log = Log {
-                dir: entry_name,
-                contains_console_log: entry_path.join("console.log").exists(),
-                contains_script_log: entry_path.join("script.log").exists(),
-                contains_error_log: entry_path.join("error.log").exists(),
-                contains_crash_log: entry_path.join("crash.log").exists(),
-            };
-            result_logs.logs.push(log);
-        }
+        let log = Log {
+            dir: entry_name,
+            contains_console_log: entry_path.join("console.log").exists(),
+            contains_script_log: entry_path.join("script.log").exists(),
+            contains_error_log: entry_path.join("error.log").exists(),
+            contains_crash_log: entry_path.join("crash.log").exists(),
+        };
+        result_logs.logs.push(log);
     }
 
     if logs_dir.join("CrashReports.log").exists() {
@@ -407,7 +405,7 @@ fn calculate_cpu_percentage(stats: &ContainerStatsResponse) -> f64 {
         return (cpu_delta / system_delta) * online_cpus;
     }
 
-    return 0.0;
+    0.0
 }
 
 #[utoipa::path(
@@ -516,7 +514,7 @@ pub async fn get_stats(
         }));
     }
 
-    return Err(ArsaError::NotFound);
+    Err(ArsaError::NotFound)
 }
 
 async fn get_size_from_path(path: &PathBuf) -> Result<u64, ArsaError> {
@@ -589,10 +587,11 @@ pub async fn get_profile_files(
     Ok(AppJson(ProfileFileListResponse { files }))
 }
 
+// Full path needed because, we have to manually add these wildcard paths to utoipa
 #[utoipa::path(
     get,
     tag = "server",
-    path = "/{id}/profile/{path}",
+    path = "/api/v2/server/{id}/profile/{path}",
     params(
         ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
         ("path" = String, Path, description = "Relative path inside the profile directory", example = "some.file")
@@ -621,10 +620,11 @@ pub async fn get_profile_file(
     Ok(AppJson(FileContentResponse { file_content }))
 }
 
+// Full path needed because, we have to manually add these wildcard paths to utoipa
 #[utoipa::path(
     put,
     tag = "server",
-    path = "/{id}/profile/{path}",
+    path = "/api/v2/server/{id}/profile/{path}",
     params(
         ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
         ("path" = String, Path, description = "Relative path inside the profile directory", example = "settings.lua")
@@ -795,10 +795,7 @@ pub async fn start_server(
             return;
         };
 
-        let Some(name) = matches
-            .name("name")
-            .and_then(|x| Some(x.as_str().to_string()))
-        else {
+        let Some(name) = matches.name("name").map(|x| x.as_str().to_string()) else {
             return;
         };
 
@@ -897,7 +894,7 @@ pub async fn server_update_player_count(
 
             server.update(&state.db).await?;
             send_message(
-                &state,
+                state,
                 &ServerStatusUpdates::PlayerCountUpdate {
                     uuid: uuid.to_string(),
                     player_count,
@@ -1253,7 +1250,7 @@ pub async fn put_server(
     server.branch = Set(params.branch);
     server.startup_parameters_wrapper = Set(params.startup_parameters_wrapper);
 
-    server.update(&state.db).await?.uuid;
+    server.update(&state.db).await?;
 
     create_dirs(params.uuid).await?;
 
@@ -1465,17 +1462,16 @@ pub async fn find_latest_log_file(logs_dir: &PathBuf) -> Result<Option<PathBuf>,
         }
 
         // Get the modification time to find the latest directory
-        if let Ok(metadata) = fs::metadata(&path).await {
-            if let Ok(modified) = metadata.modified() {
-                if modified > latest_time {
-                    latest_time = modified;
+        if let Ok(metadata) = fs::metadata(&path).await
+            && let Ok(modified) = metadata.modified()
+            && modified > latest_time
+        {
+            latest_time = modified;
 
-                    // Look for console.log in this directory
-                    let console_log = path.join("console.log");
-                    if console_log.exists() {
-                        latest_file = Some(console_log);
-                    }
-                }
+            // Look for console.log in this directory
+            let console_log = path.join("console.log");
+            if console_log.exists() {
+                latest_file = Some(console_log);
             }
         }
     }

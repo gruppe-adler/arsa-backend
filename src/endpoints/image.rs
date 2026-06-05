@@ -94,7 +94,7 @@ pub async fn send_pull_message(
             }
             models::pull_log::Model {
                 id,
-                pull_id: pull_id.clone(),
+                pull_id: *pull_id,
                 error_detail_code: info
                     .error_detail
                     .as_ref()
@@ -118,7 +118,7 @@ pub async fn send_pull_message(
         }
         Err(err) => models::pull_log::Model {
             id: Uuid::new_v4().to_string(),
-            pull_id: pull_id.clone(),
+            pull_id: *pull_id,
             error_detail_message: err.to_string(),
             ..Default::default()
         },
@@ -141,7 +141,7 @@ pub async fn send_pull_message(
         .await?;
 
     send_message(
-        &state,
+        state,
         &ServerStatusUpdates::CreateImageProgress { info: pull_log },
     )?;
 
@@ -456,7 +456,7 @@ pub async fn get_pull_image(
             state
                 .docker
                 .remove_container(
-                    &container_name,
+                    container_name,
                     Some(RemoveContainerOptionsBuilder::new().force(true).build()),
                 )
                 .await?;

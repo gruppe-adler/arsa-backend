@@ -50,9 +50,12 @@ impl ActiveModelBehavior for ActiveModel {}
 #[derive(Debug, Serialize, Deserialize, Clone, FromJsonQueryResult, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Platform {
-    PlatformPc,
-    PlatformXbl,
-    PlatformPsn,
+    #[serde(rename = "PLATFORM_PC")]
+    Pc,
+    #[serde(rename = "PLATFORM_XBL")]
+    Xbl,
+    #[serde(rename = "PLATFORM_PSN")]
+    Psn,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, FromJsonQueryResult, PartialEq, Eq, ToSchema)]
