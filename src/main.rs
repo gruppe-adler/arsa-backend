@@ -11,11 +11,15 @@ use axum::{
     routing::{any, get},
 };
 use axum_extra::{TypedHeader, headers};
-use bollard::Docker;
+use bollard::{
+    Docker,
+    query_parameters::{EventsOptionsBuilder, ListContainersOptionsBuilder},
+};
 use futures::{SinkExt, StreamExt};
 use local_ip_address::local_ip;
 use sea_orm::{ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter};
 use std::{
+    collections::HashMap,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::Arc,
@@ -23,21 +27,24 @@ use std::{
 use tokio::{
     fs, signal,
     sync::{Mutex, broadcast},
+    task::JoinHandle,
 };
+use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
+use uuid::Uuid;
 
 use crate::{
-    endpoints::image::*,
-    endpoints::server::*,
-    endpoints::workshop::*,
+    endpoints::{image::*, server::*, workshop::*},
     models::{
-        requests::EditProfileFileRequest, responses::LogType, responses::ProfileFileListResponse,
+        requests::EditProfileFileRequest,
+        responses::{LogType, ProfileFileListResponse},
         server::ArsStatus,
     },
+    shared::ArsaError,
 };
 
 mod endpoints;
@@ -184,14 +191,20 @@ async fn main() -> anyhow::Result<()> {
         watchers: tokio::sync::RwLock::new(std::collections::HashMap::new()),
     });
 
+    update_container_status(&app_state)
+        .await
+        .map_err(|e| anyhow::anyhow!("{:?}", e))?;
+
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest("/api", api_routes_v2)
         .route("/ws", any(ws_handler))
         .layer(cors_layer)
-        .with_state(app_state)
+        .with_state(app_state.clone())
         .split_for_parts();
 
     let router = router.merge(SwaggerUi::new("/swagger-ui").url("/apidoc/openapi.json", api));
+
+    let (watch_handle, watch_token) = watch_containers(&app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(
@@ -200,6 +213,10 @@ async fn main() -> anyhow::Result<()> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    println!();
+    println!("Shutting down...");
+    watch_token.cancel();
+    let _ = watch_handle.await;
 
     Ok(())
 }
@@ -226,6 +243,51 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
+}
+
+fn watch_containers(state: &Arc<AppState>) -> (JoinHandle<()>, CancellationToken) {
+    let token = CancellationToken::new();
+
+    let cloned_token = token.clone();
+
+    let mut filters = HashMap::new();
+    filters.insert("type", vec!["container"]);
+    filters.insert("label", vec!["de.grad.arsa.version"]);
+    filters.insert("event", vec!["start", "die"]);
+    let state = state.clone();
+
+    let mut event_stream = state
+        .docker
+        .events(Some(EventsOptionsBuilder::new().filters(&filters).build()));
+
+    let join_handle = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                event = event_stream.next() => {
+                    if let Some(event) = event
+                        && let Ok(event_message) = event
+                        && let Some(action) = event_message.action
+                        && let Some(actor) = event_message.actor
+                        && let Some(id) = actor.id
+                        && let Ok(container_info) = state.docker.inspect_container(&id, None).await
+                        && let Some(name) = container_info.name
+                        && let Ok(id) = Uuid::parse_str(name.trim_start_matches('/'))
+                    {
+                        if action == "start" {
+                            let _ = update_is_running_by_id(&state, &id, true).await;
+                        } else if action == "die" {
+                            let _ = update_is_running_by_id(&state, &id, false).await;
+                        }
+                    }
+                },
+                _ = cloned_token.cancelled() => {
+                    println!("Container watch stopped.");
+                    break;
+                }
+            }
+        }
+    });
+    (join_handle, token)
 }
 
 async fn ws_handler(
@@ -295,6 +357,34 @@ async fn send_close_message(
             reason: reason.into(),
         })))
         .await;
+}
+
+async fn update_container_status(state: &Arc<AppState>) -> Result<(), ArsaError> {
+    let mut filters = HashMap::new();
+    filters.insert("label", vec!["de.grad.arsa.version"]);
+
+    let containers = state
+        .docker
+        .list_containers(Some(
+            ListContainersOptionsBuilder::new()
+                .all(true)
+                .filters(&filters)
+                .build(),
+        ))
+        .await?;
+
+    for container in containers {
+        if let Some(names) = container.names
+            && let Some(name) = names.first()
+            && let Ok(id) = Uuid::parse_str(name.trim_start_matches('/'))
+            && let Some(status) = container.status
+        {
+            let is_running = status == "running" && status == "restarting";
+            update_is_running_by_id(state, &id, is_running).await?;
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

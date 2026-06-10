@@ -883,11 +883,7 @@ pub async fn start_server(
         Ok(pos)
     }
 
-    let is_running = update_is_running(&state, server).await?;
-
-    Ok(AppJson(SuccessResponse {
-        success: is_running,
-    }))
+    Ok(AppJson(SuccessResponse { success: true }))
 }
 
 pub async fn server_update_player_count(
@@ -933,7 +929,7 @@ pub async fn stop_server(
     State(state): State<Arc<AppState>>,
     Path(IdParams { id }): Path<IdParams>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
-    let server = models::server::Entity::find_by_id(id)
+    let _ = models::server::Entity::find_by_id(id)
         .one(&state.db)
         .await?
         .ok_or(ArsaError::NotFound)?;
@@ -955,14 +951,11 @@ pub async fn stop_server(
         } = &err
             && *status_code == 404
         {
-            update_is_running_db(&state, server, false).await?;
             return Ok(AppJson(SuccessResponse { success: true }));
         } else {
             return Err(err.into());
         }
     }
-
-    update_is_running(&state, server).await?;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -1393,6 +1386,31 @@ async fn update_is_running_db(
     let mut server: models::server::ActiveModel = server.into();
     server.is_running = Set(is_running);
     server.update(&state.db).await?;
+    Ok(())
+}
+
+pub async fn update_is_running_by_id(
+    state: &Arc<AppState>,
+    id: &Uuid,
+    is_running: bool,
+) -> Result<(), ArsaError> {
+    let server = models::server::Entity::find_by_id(*id)
+        .one(&state.db)
+        .await?
+        .ok_or(ArsaError::NotFound)?;
+
+    let mut server: models::server::ActiveModel = server.into();
+    server.is_running = Set(is_running);
+    server.update(&state.db).await?;
+
+    send_message(
+        state,
+        &ServerStatusUpdates::IsRunningUpdate {
+            uuid: id.to_string(),
+            is_running,
+        },
+    )?;
+
     Ok(())
 }
 
