@@ -100,6 +100,13 @@ async fn main() -> anyhow::Result<()> {
         fs::create_dir_all(base_path).await?;
     }
 
+    let addon_path = crate::endpoints::server::get_addon_download_dir()
+        .await
+        .map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    if !addon_path.exists() {
+        fs::create_dir_all(addon_path).await?;
+    }
+
     let db_dir = PathBuf::from("./db/");
     if !db_dir.exists() {
         fs::create_dir(&db_dir).await?;

@@ -119,6 +119,18 @@ async fn get_logs_path(
     Ok(server_path)
 }
 
+pub async fn get_addon_download_dir() -> Result<PathBuf, ArsaError> {
+    let mut addon_dir = get_ars_path();
+
+    if addon_dir.is_relative() {
+        addon_dir = fs::canonicalize(addon_dir).await?;
+    }
+
+    addon_dir = addon_dir.join("repo");
+
+    Ok(addon_dir)
+}
+
 async fn get_log_path(uuid: &Uuid) -> Result<PathBuf, ArsaError> {
     Ok(get_profiles_path(uuid).await?.join("logs"))
 }
@@ -1540,6 +1552,18 @@ pub async fn create_server_container(
             typ: Some(MountTypeEnum::BIND),
             ..Default::default()
         },
+        Mount {
+            target: Some("/ars/arsa/repo/".to_string()),
+            source: Some(
+                get_addon_download_dir()
+                    .await?
+                    .into_os_string()
+                    .into_string()
+                    .unwrap(),
+            ),
+            typ: Some(MountTypeEnum::BIND),
+            ..Default::default()
+        },
     ];
 
     let host_config = HostConfig {
@@ -1565,6 +1589,8 @@ pub async fn create_server_container(
         "/ars/arsa/config/config.json".to_string(),
         "-profile".to_string(),
         "/ars/arsa/profiles/".to_string(),
+        "-addonDownloadDir".to_string(),
+        "/ars/arsa/repo/".to_string(),
     ];
 
     for param in &server.startup_parameters_wrapper.startup_parameters {
