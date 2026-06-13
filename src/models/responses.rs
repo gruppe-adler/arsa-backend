@@ -116,8 +116,8 @@ pub enum ServerStatusUpdates {
         uuid: String,
         player_count: u32,
     },
-    Message {
-        message: String,
+    LogUpdate {
+        log: models::log::Model,
     },
     CreateImageProgress {
         info: models::pull_log::Model,

@@ -35,10 +35,11 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     AppState,
-    models::{self, player, requests::*, responses::*},
+    models::{self, log::LogAction, player, requests::*, responses::*},
     shared::{
         AppJson,
         ArsaError::{self, BadRequest},
+        log_action,
     },
 };
 
@@ -353,6 +354,8 @@ pub async fn delete_log(
     }
 
     fs::remove_dir_all(log_path).await?;
+
+    let _ = log_action(&state, LogAction::ServerLogDeleted, Some(uuid)).await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -733,6 +736,8 @@ pub async fn start_server(
 
     state.docker.start_container(&container_name, None).await?;
 
+    let _ = log_action(&state, LogAction::ServerStarted, Some(id)).await;
+
     let poll_state = state.clone();
     let server_uuid = id;
 
@@ -957,6 +962,8 @@ pub async fn stop_server(
         }
     }
 
+    let _ = log_action(&state, LogAction::ServerStopped, Some(id)).await;
+
     Ok(AppJson(SuccessResponse { success: true }))
 }
 
@@ -1017,12 +1024,6 @@ pub async fn get_server(
 pub async fn get_servers(
     State(state): State<Arc<AppState>>,
 ) -> Result<AppJson<Vec<models::server::Model>>, ArsaError> {
-    send_message(
-        &state,
-        &ServerStatusUpdates::Message {
-            message: "Get Servers called".to_string(),
-        },
-    )?;
     Ok(AppJson(
         models::server::Entity::find().all(&state.db).await?,
     ))
@@ -1144,6 +1145,8 @@ pub async fn post_server(
 
     create_dirs(uuid).await?;
 
+    let _ = log_action(&state, LogAction::ServerAdded, Some(uuid)).await;
+
     Ok(AppJson(UuidResponse { uuid }))
 }
 
@@ -1259,6 +1262,8 @@ pub async fn put_server(
 
     create_dirs(params.uuid).await?;
 
+    let _ = log_action(&state, LogAction::ServerUpdated, Some(params.uuid)).await;
+
     Ok(AppJson(SuccessResponse { success: true }))
 }
 
@@ -1282,6 +1287,8 @@ pub async fn delete_server(
     if delete_result.rows_affected == 0 {
         return Err(ArsaError::NotFound);
     }
+
+    let _ = log_action(&state, LogAction::ServerDeleted, Some(id)).await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }

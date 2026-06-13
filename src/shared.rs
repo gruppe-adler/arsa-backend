@@ -3,11 +3,63 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use sea_orm::DbErr;
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbErr};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
-use crate::models::responses::ErrorResponse;
+use crate::{
+    AppState,
+    endpoints::server::send_message,
+    models::{
+        self,
+        log::LogAction,
+        responses::{ErrorResponse, ServerStatusUpdates},
+    },
+};
+
+pub async fn log_action(
+    state: &Arc<AppState>,
+    action: LogAction,
+    target: Option<Uuid>,
+) -> Result<(), ArsaError> {
+    let log = models::log::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        action: Set(action),
+        target: Set(target),
+        timestamp: Set(Utc::now()),
+    };
+
+    let log = log.insert(&state.db).await?;
+
+    send_message(state, &ServerStatusUpdates::LogUpdate { log })?;
+
+    Ok(())
+}
+
+#[derive(Deserialize, IntoParams)]
+pub struct PaginationParams {
+    /// Page number (default: 1)
+    pub page: Option<u64>,
+    /// Items per page (default: 50)
+    pub limit: Option<u64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PaginatedResponse<T: ToSchema> {
+    /// Data
+    pub data: Vec<T>,
+    /// Page number
+    pub page: u64,
+    /// Limit
+    pub limit: u64,
+    /// Total
+    pub total: u64,
+    /// Total pages
+    pub total_pages: u64,
+}
 
 #[derive(Debug)]
 pub enum ArsaError {

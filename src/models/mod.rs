@@ -1,3 +1,4 @@
+pub mod log;
 pub mod player;
 pub mod pull_log;
 pub mod requests;

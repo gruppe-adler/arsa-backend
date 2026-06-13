@@ -25,10 +25,11 @@ use crate::{
     },
     models::{
         self,
+        log::LogAction,
         responses::{ErrorResponse, ImageVersionResponse, ServerStatusUpdates, SuccessResponse},
         server::ArsStatus,
     },
-    shared::{AppJson, ArsaError},
+    shared::{AppJson, ArsaError, log_action},
 };
 
 pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
@@ -47,6 +48,8 @@ pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
     if let Err(err) = status_update(state, models::server::ArsStatus::Recreating).await {
         println!("{:?}", err);
     }
+
+    let _ = log_action(state, LogAction::ImagePullStarted, None).await;
 
     let pull_id = Uuid::new_v4();
 
@@ -488,12 +491,5 @@ pub async fn get_pull_image(
 pub async fn get_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<AppJson<crate::models::server::ArsStatus>, ArsaError> {
-    send_message(
-        &state,
-        &ServerStatusUpdates::Message {
-            message: "Status send".to_string(),
-        },
-    )?;
-
     Ok(AppJson(state.status.lock().await.clone()))
 }
