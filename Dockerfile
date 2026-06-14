@@ -20,8 +20,12 @@ COPY --from=cacher /app/target target
 RUN cargo build --release
 
 # Runtime stage: minimal image
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
+WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/arsa-backend-rs /usr/local/bin/arsa-backend-rs
+COPY --from=builder /app/target/release/arsa-backend /usr/local/bin/arsa-backend
 EXPOSE 3000
-CMD ["/usr/local/bin/arsa-backend-rs"]
+ENV ARSA_USE_VOLUME=true
+CMD ["/usr/local/bin/arsa-backend"]
+
+VOLUME [ "/app/db", "/app/ars"]

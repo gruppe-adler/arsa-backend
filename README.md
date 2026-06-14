@@ -46,14 +46,30 @@ cargo run
 ```
 
 The server will start on `0.0.0.0:3000` and automatically:
+
 - Create necessary directories for server data
 - Initialize SQLite database at `./db/arsa.sqlite`
 - Connect to the local Docker daemon
 
 ### Docker
 
+Build
+
 ```bash
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -p 3000:3000 arsa-backend
+docker build -t arsa-backend .
+```
+
+Run
+
+```bash
+docker run --name arsa-backend -v arsa-db-volume:/app/db -v arsa-servers-volume:/app/ars/servers -v arsa-repo-volume:/app/ars/repo -v /var/run/docker.sock:/var/run/docker.sock -p 3000:3000 arsa-backend
+```
+
+Start / Stop
+
+```bash
+docker start arsa-backend
+docker stop arsa-backend
 ```
 
 The container needs access to the Docker daemon via socket mount to manage servers.
@@ -106,6 +122,7 @@ cargo test
 ### Environment
 
 The server detects local IP automatically and requires:
+
 - Docker daemon connection (via socket at `/var/run/docker.sock`)
 - Write access to create data directories
 - SQLite database directory permissions

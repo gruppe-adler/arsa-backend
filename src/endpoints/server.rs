@@ -1560,33 +1560,49 @@ pub async fn create_server_container(
         }]),
     );
 
-    let local_profiles = get_profiles_path(&uuid).await?;
-    let local_config = get_config_path(&uuid).await?;
+    let use_volume: bool = env::var("ARSA_USE_VOLUME")
+        .unwrap_or("false".to_string())
+        .parse()
+        .unwrap_or(true);
+
+    let mount_typ = if use_volume {
+        MountTypeEnum::VOLUME
+    } else {
+        MountTypeEnum::BIND
+    };
+
+    let arsa_server_source = if use_volume {
+        env::var("ARSA_SERVER_VOLUME").unwrap_or("arsa-servers-volume".to_string())
+    } else {
+        get_base_path()
+            .await?
+            .into_os_string()
+            .into_string()
+            .unwrap()
+    };
+
+    let repo_source = if use_volume {
+        env::var("ARSA_REPO_VOLUME").unwrap_or("arsa-repo-volume".to_string())
+    } else {
+        get_addon_download_dir()
+            .await?
+            .into_os_string()
+            .into_string()
+            .unwrap()
+    };
 
     let mounts = vec![
         Mount {
-            target: Some("/ars/arsa/config".to_string()),
-            source: Some(local_config.into_os_string().into_string().unwrap()),
-            typ: Some(MountTypeEnum::BIND),
+            target: Some("/ars/arsa/servers".to_string()),
+            source: Some(arsa_server_source),
+            typ: Some(mount_typ),
             read_only: Some(true),
             ..Default::default()
         },
         Mount {
-            target: Some("/ars/arsa/profiles".to_string()),
-            source: Some(local_profiles.into_os_string().into_string().unwrap()),
-            typ: Some(MountTypeEnum::BIND),
-            ..Default::default()
-        },
-        Mount {
             target: Some("/ars/arsa/repo/".to_string()),
-            source: Some(
-                get_addon_download_dir()
-                    .await?
-                    .into_os_string()
-                    .into_string()
-                    .unwrap(),
-            ),
-            typ: Some(MountTypeEnum::BIND),
+            source: Some(repo_source),
+            typ: Some(mount_typ),
             ..Default::default()
         },
     ];
@@ -1611,9 +1627,9 @@ pub async fn create_server_container(
 
     let mut args = vec![
         "-config".to_string(),
-        "/ars/arsa/config/config.json".to_string(),
+        format!("/ars/arsa/servers/{}/config/config.json", uuid).to_string(),
         "-profile".to_string(),
-        "/ars/arsa/profiles/".to_string(),
+        format!("/ars/arsa/servers/{}/profiles/", uuid).to_string(),
         "-addonDownloadDir".to_string(),
         "/ars/arsa/repo/".to_string(),
     ];

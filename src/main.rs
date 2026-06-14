@@ -14,6 +14,7 @@ use axum_extra::{TypedHeader, headers};
 use bollard::{
     Docker,
     query_parameters::{EventsOptionsBuilder, ListContainersOptionsBuilder},
+    secret::ContainerSummaryStateEnum,
 };
 use futures::{SinkExt, StreamExt};
 use local_ip_address::local_ip;
@@ -320,7 +321,6 @@ async fn handle_socket(socket: WebSocket, _who: SocketAddr, state: Arc<AppState>
     let sender_clone = sender.clone();
     let _send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
-            println!("Message received: {msg}");
             let mut s = sender_clone.lock().await;
             if let Err(err) = s.send(Message::text(msg)).await {
                 println!("Error during ws send: {err}");
@@ -382,10 +382,11 @@ async fn update_container_status(state: &Arc<AppState>) -> Result<(), ArsaError>
         if let Some(names) = container.names
             && let Some(name) = names.first()
             && let Ok(id) = Uuid::parse_str(name.trim_start_matches('/'))
-            && let Some(status) = container.status
+            && let Some(status) = container.state
         {
-            let is_running = status == "running" && status == "restarting";
-            update_is_running_by_id(state, &id, is_running).await?;
+            let is_running = status == ContainerSummaryStateEnum::RUNNING
+                || status == ContainerSummaryStateEnum::RESTARTING;
+            let _ = update_is_running_by_id(state, &id, is_running).await;
         }
     }
 

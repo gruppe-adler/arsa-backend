@@ -34,7 +34,6 @@ use crate::{
 
 pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
     let image_name = get_image_name(branch);
-    dbg!(&image_name);
 
     let mut create = state.docker.create_image(
         Some(CreateImageOptions {
@@ -75,7 +74,7 @@ pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
         }
 
         if let Err(err) = models::pull_log::Entity::delete_many()
-            .filter(models::pull_log::Column::PullId.contains(pull_id))
+            .filter(models::pull_log::Column::PullId.eq(pull_id))
             .exec(&state.db)
             .await
         {
@@ -209,7 +208,9 @@ pub async fn get_image_version(
             } = &err
                 && *status_code == 404
             {
-                return Err(ArsaError::NotFound);
+                return Ok(AppJson(ImageVersionResponse {
+                    version: "n/a".to_owned(),
+                }));
             } else {
                 return Err(err.into());
             }
@@ -224,7 +225,9 @@ pub async fn get_image_version(
         Some(version) => Ok(AppJson(ImageVersionResponse {
             version: version.to_owned(),
         })),
-        None => Err(ArsaError::NotFound),
+        None => Ok(AppJson(ImageVersionResponse {
+            version: "n/a".to_owned(),
+        })),
     }
 }
 
