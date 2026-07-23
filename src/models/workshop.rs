@@ -4,11 +4,20 @@ use utoipa::IntoParams;
 use utoipa::PartialSchema;
 use utoipa::ToSchema;
 
-pub const UPSTREAM_BASE: &str =
-    "https://reforger.armaplatform.com/_next/data/Z1g63c7M2nDFz_D-N5faE/workshop.json";
+pub const UPSTREAM_HOST: &str = "https://reforger.armaplatform.com";
 
-pub const UPSTREAM_DETAIL_BASE: &str =
-    "https://reforger.armaplatform.com/_next/data/Z1g63c7M2nDFz_D-N5faE/workshop";
+/// Bohemia's `/_next/data/{buildId}/...` routes are versioned by the site's
+/// current Next.js build ID, which rotates on every deploy of
+/// reforger.armaplatform.com — a hardcoded ID goes stale silently and every
+/// proxied request starts 404ing. The ID is resolved at runtime instead; see
+/// `endpoints::workshop::cached_build_id`.
+pub fn upstream_workshop_json_url(build_id: &str) -> String {
+    format!("{UPSTREAM_HOST}/_next/data/{build_id}/workshop.json")
+}
+
+pub fn upstream_detail_base(build_id: &str) -> String {
+    format!("{UPSTREAM_HOST}/_next/data/{build_id}/workshop")
+}
 
 /// Valid workshop tags
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
