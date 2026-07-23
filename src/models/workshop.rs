@@ -234,9 +234,12 @@ pub struct Scenario {
     pub image: Option<ScenarioImage>,
     /// Enfusion game ID string, e.g. `{E2EC49F1…}Missions/…/Arland.conf`
     pub game_id: String,
-    pub game_mode: String,
-    pub author_name: String,
-    pub description: String,
+    /// Upstream omits this for some scenarios — not guaranteed present.
+    pub game_mode: Option<String>,
+    /// Upstream omits this for some scenarios — not guaranteed present.
+    pub author_name: Option<String>,
+    /// Upstream omits this for some scenarios — not guaranteed present.
+    pub description: Option<String>,
     pub player_count: u32,
 }
 
