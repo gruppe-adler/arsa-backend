@@ -39,7 +39,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 use crate::{
-    endpoints::{image::*, log::*, server::*, workshop::*},
+    endpoints::{defaults::*, image::*, log::*, server::*, workshop::*},
     models::{
         requests::EditProfileFileRequest,
         responses::{LogType, ProfileFileListResponse},
@@ -59,7 +59,8 @@ mod shared;
         (name = "server", description = "Server api endpoints"),
         (name = "workshop", description = "Workshop api"),
         (name = "image", description = "Docker image endpoints"),
-        (name = "log", description = "Global log endpoints")
+        (name = "log", description = "Global log endpoints"),
+        (name = "defaults", description = "Global server defaults endpoints")
     ),
     paths(
         get_profile_file,
@@ -182,10 +183,14 @@ async fn main() -> anyhow::Result<()> {
     let log_routes =
         OpenApiRouter::with_openapi(ApiDoc::openapi()).routes(routes!(get_global_logs));
 
+    let defaults_routes =
+        OpenApiRouter::with_openapi(ApiDoc::openapi()).routes(routes!(get_defaults, put_defaults));
+
     let api_routes_v2 = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest("/v2", server_routes)
         .nest("/v2", workshop_routes)
-        .nest("/v2", log_routes);
+        .nest("/v2", log_routes)
+        .nest("/v2", defaults_routes);
 
     let (tx, _rx) = broadcast::channel(50);
     let app_state = Arc::new(AppState {
