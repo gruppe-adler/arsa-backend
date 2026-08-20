@@ -24,17 +24,28 @@ pub async fn log_action(
     state: &Arc<AppState>,
     action: LogAction,
     target: Option<Uuid>,
+    actor: Option<String>,
 ) -> Result<(), ArsaError> {
     let log = models::log::ActiveModel {
         id: Set(Uuid::new_v4()),
         action: Set(action),
         target: Set(target),
+        actor_id: Set(actor.clone()),
         timestamp: Set(Utc::now()),
     };
 
     let log = log.insert(&state.db).await?;
+    let actor_name = actor.unwrap_or_default();
+    let log_response = crate::endpoints::log::GlobalLog {
+        id: log.id,
+        action: log.action.clone(),
+        target: log.target,
+        actor_id: actor_name.clone(),
+        actor: actor_name,
+        timestamp: log.timestamp,
+    };
 
-    send_message(state, &ServerStatusUpdates::LogUpdate { log })?;
+    send_message(state, &ServerStatusUpdates::LogUpdate { log: log_response })?;
 
     Ok(())
 }
@@ -69,6 +80,7 @@ pub enum ArsaError {
     BollardError(bollard::errors::Error),
     NotFound,
     BadRequest,
+    Unauthorized,
     UnknownError(String),
     IOError(std::io::Error),
     FSExtra(fs_extra::error::Error),
@@ -125,6 +137,11 @@ impl IntoResponse for ArsaError {
             ArsaError::ReqwestError(error) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 error.to_string(),
+                Some(self),
+            ),
+            ArsaError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized".to_string(),
                 Some(self),
             ),
         };

@@ -103,12 +103,6 @@ pub enum ArsStatus {
     Unavailable = 4,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Metadata {
-    pub last_tag_time: String,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, FromJsonQueryResult, PartialEq, Eq, ToSchema)]
 pub struct A2S {
     pub address: String,

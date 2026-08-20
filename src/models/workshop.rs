@@ -19,26 +19,6 @@ pub fn upstream_detail_base(build_id: &str) -> String {
     format!("{UPSTREAM_HOST}/_next/data/{build_id}/workshop")
 }
 
-/// Valid workshop tags
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum Tag {
-    Vehicles,
-    Weapons,
-    Structures,
-    Characters,
-    Animals,
-    Vegetation,
-    Props,
-    Compositions,
-    ScenariosSp,
-    ScenariosMP,
-    Terrains,
-    Systems,
-    Effects,
-    Misc,
-}
-
 /// Sort methods available on the upstream API
 #[derive(Debug, Deserialize, Serialize, ToSchema, Default)]
 #[serde(rename_all = "snake_case")]
@@ -95,15 +75,6 @@ fn default_page() -> u32 {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct Thumbnail {
-    pub url: String,
-    pub width: u32,
-    pub height: u32,
-    pub content_type: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Preview {
     pub url: String,
     pub width: u32,
@@ -122,15 +93,6 @@ pub struct AssetTag {
 pub struct Author {
     pub id: String,
     pub username: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DependencyTree {
-    pub asset_id: String,
-    pub version: String,
-    pub game_version: String,
-    pub platform_compatibility: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -208,12 +170,6 @@ pub struct AssetVersionDetail {
     pub changelog: Option<String>,
     pub scenarios: Vec<Scenario>,
     pub dependencies: Vec<Dependency>,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadTotal {
-    pub total: u64,
 }
 
 /// Image with pre-generated thumbnail URLs

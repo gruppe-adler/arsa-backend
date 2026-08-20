@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use axum::extract::{Path, State};
+use axum::{
+    Extension,
+    extract::{Path, State},
+};
 use bollard::{
     container::LogOutput,
     query_parameters::{
@@ -19,9 +22,14 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    endpoints::server::{
-        Branch, BranchParams, LOG_SCENARIOS_COUNT, LOG_SCENARIOS_MISSION, ListScenariosResponse,
-        ScenarioEntry, get_image_branch_as_string, get_image_name, send_message,
+    config::AppConfig,
+    endpoints::{
+        auth::Claims,
+        server::{
+            Branch, BranchParams, LOG_SCENARIOS_COUNT, LOG_SCENARIOS_MISSION,
+            ListScenariosResponse, ScenarioEntry, get_image_branch_as_string, get_image_name,
+            send_message,
+        },
     },
     models::{
         self,
@@ -32,7 +40,7 @@ use crate::{
     shared::{AppJson, ArsaError, log_action},
 };
 
-pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
+pub async fn pull_image(state: &Arc<AppState>, branch: &Branch, actor: String) {
     let image_name = get_image_name(branch);
 
     let mut create = state.docker.create_image(
@@ -48,7 +56,7 @@ pub async fn pull_image(state: &Arc<AppState>, branch: &Branch) {
         println!("{:?}", err);
     }
 
-    let _ = log_action(state, LogAction::ImagePullStarted, None).await;
+    let _ = log_action(state, LogAction::ImagePullStarted, None, Some(actor)).await;
 
     let pull_id = Uuid::new_v4();
 
@@ -175,7 +183,12 @@ pub async fn status_update(
 )]
 pub async fn get_pull_logs(
     State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<AppJson<Vec<models::pull_log::Model>>, ArsaError> {
+    if !claims.has_role(&AppConfig::get().admin_role) {
+        return Err(ArsaError::Unauthorized);
+    }
+
     let logs = models::pull_log::Entity::find().all(&state.db).await?;
 
     Ok(AppJson(logs))
@@ -242,10 +255,16 @@ pub async fn get_image_version(
         (status = INTERNAL_SERVER_ERROR, description = "Failed to start image or parse scenarios", body = ErrorResponse),
     )
 )]
+
 pub async fn update_scenarios_from_branch(
     State(state): State<Arc<AppState>>,
     Path(branch): Path<BranchParams>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
+    if !claims.has_role(&AppConfig::get().admin_role) {
+        return Err(ArsaError::Unauthorized);
+    }
+
     let image_name = get_image_name(&branch.branch);
     let inspect_result = state.docker.inspect_image(&image_name).await;
     let _ = match inspect_result {
@@ -423,7 +442,12 @@ pub async fn get_scenarios_from_branch(
 pub async fn get_pull_image(
     State(state): State<Arc<AppState>>,
     Path(branch): Path<BranchParams>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
+    if !claims.has_role(&AppConfig::get().admin_role) {
+        return Err(ArsaError::Unauthorized);
+    }
+
     if *(state.status.lock().await) == ArsStatus::Recreating {
         return Err(ArsaError::BadRequest);
     }
@@ -480,7 +504,7 @@ pub async fn get_pull_image(
         }
     }
 
-    pull_image(&state, &branch.branch).await;
+    pull_image(&state, &branch.branch, claims.get_user()).await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }

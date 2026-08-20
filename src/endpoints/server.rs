@@ -1,4 +1,7 @@
-use axum::extract::{Json, Path, State};
+use axum::{
+    Extension,
+    extract::{Json, Path, State},
+};
 use bollard::{
     query_parameters::{
         CreateContainerOptionsBuilder, InspectContainerOptionsBuilder,
@@ -23,7 +26,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    env,
+    env, format,
     path::{Component, PathBuf},
     sync::{Arc, LazyLock},
 };
@@ -35,6 +38,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     AppState,
+    config::AppConfig,
     models::{self, log::LogAction, player, requests::*, responses::*},
     shared::{
         AppJson,
@@ -44,19 +48,23 @@ use crate::{
 };
 
 #[derive(
-    Debug, Clone, Copy, Deserialize, Serialize, ToSchema, Eq, PartialEq, FromJsonQueryResult,
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    Deserialize,
+    Serialize,
+    ToSchema,
+    Eq,
+    PartialEq,
+    FromJsonQueryResult,
 )]
 pub enum Branch {
+    #[default]
     #[serde(rename = "stable")]
     Stable,
     #[serde(rename = "experimental")]
     Experimental,
-}
-
-impl Default for Branch {
-    fn default() -> Self {
-        Self::Stable
-    }
 }
 
 #[derive(IntoParams, Deserialize)]
@@ -338,6 +346,7 @@ pub async fn get_crash_log(
 pub async fn delete_log(
     State(state): State<Arc<AppState>>,
     Path((uuid, log)): Path<(Uuid, String)>,
+    Extension(claims): Extension<super::auth::Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
     let _ = models::server::Entity::find_by_id(uuid)
         .one(&state.db)
@@ -355,7 +364,13 @@ pub async fn delete_log(
 
     fs::remove_dir_all(log_path).await?;
 
-    let _ = log_action(&state, LogAction::ServerLogDeleted, Some(uuid)).await;
+    let _ = log_action(
+        &state,
+        LogAction::ServerLogDeleted,
+        Some(uuid),
+        Some(claims.get_user()),
+    )
+    .await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -682,6 +697,7 @@ pub async fn put_profile_file(
 pub async fn start_server(
     State(state): State<Arc<AppState>>,
     Path(IdParams { id }): Path<IdParams>,
+    Extension(claims): Extension<super::auth::Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
     let server = models::server::Entity::find_by_id(id)
         .one(&state.db)
@@ -736,7 +752,13 @@ pub async fn start_server(
 
     state.docker.start_container(&container_name, None).await?;
 
-    let _ = log_action(&state, LogAction::ServerStarted, Some(id)).await;
+    let _ = log_action(
+        &state,
+        LogAction::ServerStarted,
+        Some(id),
+        Some(claims.get_user()),
+    )
+    .await;
 
     let poll_state = state.clone();
     let server_uuid = id;
@@ -933,6 +955,7 @@ pub async fn server_update_player_count(
 pub async fn stop_server(
     State(state): State<Arc<AppState>>,
     Path(IdParams { id }): Path<IdParams>,
+    Extension(claims): Extension<super::auth::Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
     let _ = models::server::Entity::find_by_id(id)
         .one(&state.db)
@@ -962,7 +985,13 @@ pub async fn stop_server(
         }
     }
 
-    let _ = log_action(&state, LogAction::ServerStopped, Some(id)).await;
+    let _ = log_action(
+        &state,
+        LogAction::ServerStopped,
+        Some(id),
+        Some(claims.get_user()),
+    )
+    .await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -1128,6 +1157,7 @@ pub struct UuidResponse {
 )]
 pub async fn post_server(
     State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<super::auth::Claims>,
     AppJson(params): AppJson<models::server::Model>,
 ) -> Result<AppJson<UuidResponse>, ArsaError> {
     let uuid = models::server::ActiveModel {
@@ -1145,7 +1175,13 @@ pub async fn post_server(
 
     create_dirs(uuid).await?;
 
-    let _ = log_action(&state, LogAction::ServerAdded, Some(uuid)).await;
+    let _ = log_action(
+        &state,
+        LogAction::ServerAdded,
+        Some(uuid),
+        Some(claims.get_user()),
+    )
+    .await;
 
     Ok(AppJson(UuidResponse { uuid }))
 }
@@ -1243,6 +1279,7 @@ pub async fn post_server(
 )]
 pub async fn put_server(
     State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<super::auth::Claims>,
     AppJson(params): AppJson<models::server::Model>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
     let server = models::server::Entity::find_by_id(params.uuid)
@@ -1262,7 +1299,13 @@ pub async fn put_server(
 
     create_dirs(params.uuid).await?;
 
-    let _ = log_action(&state, LogAction::ServerUpdated, Some(params.uuid)).await;
+    let _ = log_action(
+        &state,
+        LogAction::ServerUpdated,
+        Some(params.uuid),
+        Some(claims.get_user()),
+    )
+    .await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -1280,6 +1323,7 @@ pub async fn put_server(
 pub async fn delete_server(
     State(state): State<Arc<AppState>>,
     Path(IdParams { id }): Path<IdParams>,
+    Extension(claims): Extension<super::auth::Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
     let delete_result = models::server::Entity::delete_by_id(id)
         .exec(&state.db)
@@ -1288,7 +1332,13 @@ pub async fn delete_server(
         return Err(ArsaError::NotFound);
     }
 
-    let _ = log_action(&state, LogAction::ServerDeleted, Some(id)).await;
+    let _ = log_action(
+        &state,
+        LogAction::ServerDeleted,
+        Some(id),
+        Some(claims.get_user()),
+    )
+    .await;
 
     Ok(AppJson(SuccessResponse { success: true }))
 }
@@ -1317,7 +1367,7 @@ pub fn get_image_branch_as_string(branch: &Branch) -> String {
 pub fn get_image_name(branch: &Branch) -> String {
     let base_name = "thewillard/arsa-test";
 
-    format!("{}:{}", base_name, &get_image_branch_as_string(branch))
+    format!("{}:{}", base_name, get_image_branch_as_string(branch))
 }
 
 // Regex patterns
@@ -1560,19 +1610,16 @@ pub async fn create_server_container(
         }]),
     );
 
-    let use_volume: bool = env::var("ARSA_USE_VOLUME")
-        .unwrap_or("false".to_string())
-        .parse()
-        .unwrap_or(true);
+    let config = AppConfig::get();
 
-    let mount_typ = if use_volume {
+    let mount_typ = if config.use_volume {
         MountTypeEnum::VOLUME
     } else {
         MountTypeEnum::BIND
     };
 
-    let arsa_server_source = if use_volume {
-        env::var("ARSA_SERVER_VOLUME").unwrap_or("arsa-servers-volume".to_string())
+    let arsa_server_source = if config.use_volume {
+        config.server_volume.clone()
     } else {
         get_base_path()
             .await?
@@ -1581,8 +1628,8 @@ pub async fn create_server_container(
             .unwrap()
     };
 
-    let repo_source = if use_volume {
-        env::var("ARSA_REPO_VOLUME").unwrap_or("arsa-repo-volume".to_string())
+    let repo_source = if config.use_volume {
+        config.repo_volume.clone()
     } else {
         get_addon_download_dir()
             .await?
@@ -1596,7 +1643,6 @@ pub async fn create_server_container(
             target: Some("/ars/arsa/servers".to_string()),
             source: Some(arsa_server_source),
             typ: Some(mount_typ),
-            read_only: Some(true),
             ..Default::default()
         },
         Mount {

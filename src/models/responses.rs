@@ -117,7 +117,7 @@ pub enum ServerStatusUpdates {
         player_count: u32,
     },
     LogUpdate {
-        log: models::log::Model,
+        log: crate::endpoints::log::GlobalLog,
     },
     CreateImageProgress {
         info: models::pull_log::Model,

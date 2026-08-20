@@ -64,7 +64,7 @@ async fn refresh_build_id(client: &Client) -> Result<String, ArsaError> {
     params(WorkshopQuery),
     responses(
         (status = OK, description = "Workshop assets returned successfully", body = WorkshopResponse),
-        (status = BAD_REQUEST, description = "Upstream request failed",              body = ErrorResponse),
+        (status = BAD_REQUEST, description = "Upstream request failed",      body = ErrorResponse),
     ),
     tag = "workshop"
 )]

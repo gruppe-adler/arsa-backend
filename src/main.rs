@@ -1,15 +1,16 @@
 use axum::{
     extract::{
-        ConnectInfo, WebSocketUpgrade,
+        ConnectInfo, State, WebSocketUpgrade,
         ws::{CloseFrame, Message, WebSocket},
     },
     http::{
-        HeaderValue, Method,
+        Method,
         header::{AUTHORIZATION, CONTENT_TYPE},
     },
     response::IntoResponse,
     routing::{any, get},
 };
+use axum_cookie::{CookieLayer, CookieManager};
 use axum_extra::{TypedHeader, headers};
 use bollard::{
     Docker,
@@ -18,6 +19,7 @@ use bollard::{
 };
 use futures::{SinkExt, StreamExt};
 use local_ip_address::local_ip;
+use reqwest::StatusCode;
 use sea_orm::{ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter};
 use std::{
     collections::HashMap,
@@ -27,10 +29,11 @@ use std::{
 };
 use tokio::{
     fs, signal,
-    sync::{Mutex, broadcast},
+    sync::{Mutex, RwLock, broadcast},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
+use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
@@ -39,7 +42,9 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 use crate::{
-    endpoints::{defaults::*, image::*, log::*, server::*, workshop::*},
+    config::AppConfig,
+    endpoints::{auth::*, defaults::*, image::*, log::*, server::*, workshop::*},
+    middleware::{auth_middleware, get_claims},
     models::{
         requests::EditProfileFileRequest,
         responses::{LogType, ProfileFileListResponse},
@@ -48,7 +53,9 @@ use crate::{
     shared::ArsaError,
 };
 
+mod config;
 mod endpoints;
+mod middleware;
 mod models;
 mod shared;
 
@@ -60,11 +67,12 @@ mod shared;
         (name = "workshop", description = "Workshop api"),
         (name = "image", description = "Docker image endpoints"),
         (name = "log", description = "Global log endpoints"),
-        (name = "defaults", description = "Global server defaults endpoints")
+        (name = "defaults", description = "Global server defaults endpoints"),
+        (name = "auth", description = "Authentication endpoints")
     ),
     paths(
         get_profile_file,
-        put_profile_file
+        put_profile_file,
     )
 )]
 struct ApiDoc;
@@ -78,10 +86,21 @@ pub struct AppState {
     pub watchers: tokio::sync::RwLock<
         std::collections::HashMap<uuid::Uuid, tokio_util::sync::CancellationToken>,
     >,
+    pub oauth_states: tokio::sync::RwLock<HashMap<String, OidcAuthState>>,
+    pub sessions: tokio::sync::RwLock<HashMap<String, Claims>>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+    AppConfig::init();
+
+    let config = AppConfig::get();
+
+    println!("Bind address: {}", config.bind_address);
+    println!("Using admin role: {}", config.admin_role);
+    println!("Using oidc issuer: {}", config.oidc_issuer);
+
     let docker = Docker::connect_with_defaults().expect("Couldn't connect to docker");
     let ip = local_ip().unwrap();
 
@@ -93,7 +112,8 @@ async fn main() -> anyhow::Result<()> {
             Method::OPTIONS,
             Method::PUT,
         ])
-        .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
+        .allow_credentials(true)
+        .allow_origin(config.allowed_origins.clone())
         .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
 
     println!("Local IP address: {:?}", ip);
@@ -200,6 +220,8 @@ async fn main() -> anyhow::Result<()> {
         channel: tx,
         docker,
         watchers: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+        sessions: tokio::sync::RwLock::new(HashMap::new()),
+        oauth_states: RwLock::new(HashMap::new()),
     });
 
     update_container_status(&app_state)
@@ -208,8 +230,25 @@ async fn main() -> anyhow::Result<()> {
 
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest("/api", api_routes_v2)
+        .nest(
+            "/api/v2/auth",
+            OpenApiRouter::with_openapi(ApiDoc::openapi()).routes(routes!(user_claims)),
+        )
+        .route_layer(
+            ServiceBuilder::new()
+                .layer(axum::Extension(app_state.clone())) // make state available via extensions
+                .layer(axum::middleware::from_fn(auth_middleware)),
+        )
         .route("/ws", any(ws_handler))
+        .nest(
+            "/api/v2/auth",
+            OpenApiRouter::with_openapi(ApiDoc::openapi())
+                .routes(routes!(login))
+                .routes(routes!(callback))
+                .routes(routes!(logout)),
+        )
         .layer(cors_layer)
+        .layer(CookieLayer::strict())
         .with_state(app_state.clone())
         .split_for_parts();
 
@@ -217,7 +256,9 @@ async fn main() -> anyhow::Result<()> {
 
     let (watch_handle, watch_token) = watch_containers(&app_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&config.bind_address)
+        .await
+        .unwrap();
     axum::serve(
         listener,
         router.into_make_service_with_connect_info::<SocketAddr>(),
@@ -305,8 +346,17 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    cookie_manager: CookieManager,
 ) -> impl IntoResponse {
+    if let Some(claims) = get_claims(&state, &cookie_manager).await {
+        if !claims.has_role(&AppConfig::get().access_role) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    } else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
     } else {

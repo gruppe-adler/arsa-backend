@@ -6,4 +6,5 @@ pub mod requests;
 pub mod responses;
 pub mod scenarios;
 pub mod server;
+pub mod user;
 pub mod workshop;

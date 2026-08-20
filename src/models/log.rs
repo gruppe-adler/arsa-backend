@@ -1,4 +1,3 @@
-use crate::models::server::deserialize_uuid;
 use chrono::Utc;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -26,18 +25,20 @@ pub enum LogAction {
 }
 
 #[sea_orm::model]
-#[derive(Debug, Clone, PartialEq, Eq, DeriveEntityModel, ToSchema, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "log")]
-#[serde(rename_all = "camelCase")]
-#[schema(as = GlobalLog)]
 pub struct Model {
     #[sea_orm(primary_key)]
-    #[serde(default = "Uuid::new_v4", deserialize_with = "deserialize_uuid")]
     pub id: Uuid,
 
     pub action: LogAction,
 
     pub target: Option<Uuid>,
+
+    pub actor_id: Option<String>,
+
+    #[sea_orm(belongs_to, from = "actor_id", to = "id")]
+    pub actor: BelongsTo<Option<super::user::Entity>>,
 
     pub timestamp: chrono::DateTime<Utc>,
 }
