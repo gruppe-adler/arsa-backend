@@ -1,0 +1,210 @@
+use axum::{
+    extract::rejection::JsonRejection,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbErr};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
+
+use crate::{
+    AppState,
+    endpoints::server::send_message,
+    models::{
+        self,
+        log::LogAction,
+        responses::{ErrorResponse, ServerStatusUpdates},
+    },
+};
+
+pub async fn log_action(
+    state: &Arc<AppState>,
+    action: LogAction,
+    target: Option<Uuid>,
+    actor: Option<String>,
+) -> Result<(), ArsaError> {
+    let log = models::log::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        action: Set(action),
+        target: Set(target),
+        actor_id: Set(actor.clone()),
+        timestamp: Set(Utc::now()),
+    };
+
+    let log = log.insert(&state.db).await?;
+    let actor_name = actor.unwrap_or_default();
+    let log_response = crate::endpoints::log::GlobalLog {
+        id: log.id,
+        action: log.action.clone(),
+        target: log.target,
+        actor_id: actor_name.clone(),
+        actor: actor_name,
+        timestamp: log.timestamp,
+    };
+
+    send_message(state, &ServerStatusUpdates::LogUpdate { log: log_response })?;
+
+    Ok(())
+}
+
+#[derive(Deserialize, IntoParams)]
+pub struct PaginationParams {
+    /// Page number (default: 1)
+    pub page: Option<u64>,
+    /// Items per page (default: 50)
+    pub limit: Option<u64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PaginatedResponse<T: ToSchema> {
+    /// Data
+    pub data: Vec<T>,
+    /// Page number
+    pub page: u64,
+    /// Limit
+    pub limit: u64,
+    /// Total
+    pub total: u64,
+    /// Total pages
+    pub total_pages: u64,
+}
+
+#[derive(Debug)]
+pub enum ArsaError {
+    SerdeError(serde_json::Error),
+    DatabaseError(DbErr),
+    JsonRejection(JsonRejection),
+    BollardError(bollard::errors::Error),
+    NotFound,
+    BadRequest,
+    Unauthorized,
+    UnknownError(String),
+    IOError(std::io::Error),
+    FSExtra(fs_extra::error::Error),
+    ReqwestError(reqwest::Error),
+}
+
+impl IntoResponse for ArsaError {
+    fn into_response(self) -> Response {
+        dbg!(&self);
+        let (status, message, err) = match &self {
+            ArsaError::JsonRejection(rejection) => {
+                (rejection.status(), rejection.body_text(), None)
+            }
+            ArsaError::DatabaseError(db_err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                db_err.to_string(),
+                Some(self),
+            ),
+            ArsaError::NotFound => (
+                StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND.to_string(),
+                Some(self),
+            ),
+            ArsaError::UnknownError(message) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                message.clone(),
+                Some(self),
+            ),
+            ArsaError::SerdeError(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
+                Some(self),
+            ),
+            ArsaError::BollardError(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
+                Some(self),
+            ),
+            ArsaError::IOError(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
+                Some(self),
+            ),
+            ArsaError::FSExtra(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
+                Some(self),
+            ),
+            ArsaError::BadRequest => (
+                StatusCode::BAD_REQUEST,
+                "Bad Request".to_string(),
+                Some(self),
+            ),
+            ArsaError::ReqwestError(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
+                Some(self),
+            ),
+            ArsaError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized".to_string(),
+                Some(self),
+            ),
+        };
+
+        let mut response = (status, AppJson(ErrorResponse { message })).into_response();
+        if let Some(err) = err {
+            response.extensions_mut().insert(Arc::new(err));
+        }
+        response
+    }
+}
+
+#[derive(ToSchema, axum_macros::FromRequest)]
+#[from_request(via(axum::Json), rejection(ArsaError))]
+pub struct AppJson<T>(pub T);
+
+impl<T> IntoResponse for AppJson<T>
+where
+    axum::Json<T>: IntoResponse,
+{
+    fn into_response(self) -> Response {
+        axum::Json(self.0).into_response()
+    }
+}
+
+impl From<JsonRejection> for ArsaError {
+    fn from(rejection: JsonRejection) -> Self {
+        Self::JsonRejection(rejection)
+    }
+}
+
+impl From<serde_json::Error> for ArsaError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::SerdeError(value)
+    }
+}
+
+impl From<DbErr> for ArsaError {
+    fn from(err: DbErr) -> Self {
+        Self::DatabaseError(err)
+    }
+}
+
+impl From<bollard::errors::Error> for ArsaError {
+    fn from(value: bollard::errors::Error) -> Self {
+        Self::BollardError(value)
+    }
+}
+
+impl From<std::io::Error> for ArsaError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IOError(value)
+    }
+}
+
+impl From<fs_extra::error::Error> for ArsaError {
+    fn from(value: fs_extra::error::Error) -> Self {
+        Self::FSExtra(value)
+    }
+}
+
+impl From<reqwest::Error> for ArsaError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::ReqwestError(value)
+    }
+}

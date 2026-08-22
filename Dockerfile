@@ -1,36 +1,31 @@
-FROM denoland/deno:alpine
-
-# the group id of the group docker of your docker host
-ARG DOCKER_GID="989"
-
-# the port used in the EXPOSE instruction
-ARG DOCKER_PORT="3000"
-
-# set 'root' as current user
-USER root
-
-# install docker-cli to allow starting containers on host
-RUN apk add docker-cli-compose docker-cli-buildx
-
-# create and set working directory
+# Planner stage: analyze dependencies
+FROM rust:latest AS planner
 WORKDIR /app
+RUN cargo install cargo-chef
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# copy all backend files to working directory
-COPY . /app/
+# Cacher stage: compile dependencies
+FROM rust:latest AS cacher
+WORKDIR /app
+RUN cargo install cargo-chef
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-# create group 'arsa'(gid 1337) and add user 'deno' to that group
-RUN addgroup --gid 1337 arsa && adduser deno arsa
+# Builder stage: compile application
+FROM rust:latest AS builder
+WORKDIR /app
+COPY . .
+COPY --from=cacher /app/target target
+RUN cargo build --release
 
-# create folders and set group to 'arsa'(gid 1337)
-RUN install -d -m 775 -g arsa /app/profiles && install -d -m 775 -g arsa /app/servers
+# Runtime stage: minimal image
+FROM debian:trixie-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/arsa-backend /usr/local/bin/arsa-backend
+EXPOSE 3000
+ENV ARSA_USE_VOLUME=true
+CMD ["/usr/local/bin/arsa-backend"]
 
-# create group 'docker'(gid from arg) and add user 'deno' to that group
-# this group is defined on the docker host; needs to be adjusted in production
-RUN addgroup --gid ${DOCKER_GID} docker && adduser deno docker
-
-# switch to unprivileged user 'deno'
-USER deno
-
-EXPOSE ${DOCKER_PORT}
-
-ENTRYPOINT ["deno", "task", "prod"]
+VOLUME [ "/app/db", "/app/ars"]
