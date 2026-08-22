@@ -43,6 +43,8 @@ use crate::{
 pub async fn pull_image(state: &Arc<AppState>, branch: &Branch, actor: String) {
     let image_name = get_image_name(branch);
 
+    println!("Pulling: {}", image_name);
+
     let mut create = state.docker.create_image(
         Some(CreateImageOptions {
             from_image: Some(image_name.to_owned()),

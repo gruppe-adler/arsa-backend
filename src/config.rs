@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub use_volume: bool,
     pub server_volume: String,
     pub repo_volume: String,
+    pub ars_container: String,
 }
 
 static CONFIG: OnceLock<AppConfig> = OnceLock::new();
@@ -49,6 +50,8 @@ impl AppConfig {
                 .unwrap_or("arsa-servers-volume".to_string()),
             repo_volume: std::env::var("ARSA_REPO_VOLUME")
                 .unwrap_or("arsa-repo-volume".to_string()),
+            ars_container: std::env::var("ARSA_ARS_CONTAINER")
+                .unwrap_or("ghcr.io/gruppe-adler/ars-image".to_string()),
         }
     }
 

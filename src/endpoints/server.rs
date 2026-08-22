@@ -1365,9 +1365,11 @@ pub fn get_image_branch_as_string(branch: &Branch) -> String {
 }
 
 pub fn get_image_name(branch: &Branch) -> String {
-    let base_name = "thewillard/arsa-test";
-
-    format!("{}:{}", base_name, get_image_branch_as_string(branch))
+    format!(
+        "{}:{}",
+        AppConfig::get().ars_container,
+        get_image_branch_as_string(branch)
+    )
 }
 
 // Regex patterns
