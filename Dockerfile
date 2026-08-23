@@ -21,8 +21,14 @@ RUN cargo build --release
 
 # Runtime stage: minimal image
 FROM debian:trixie-slim
+
+RUN groupadd --gid 1337 arsa && useradd -u 1000 -g arsa rust
+
 WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+USER rust
+
 COPY --from=builder /app/target/release/arsa-backend /usr/local/bin/arsa-backend
 EXPOSE 3000
 ENV ARSA_USE_VOLUME=true
