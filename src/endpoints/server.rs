@@ -1595,22 +1595,25 @@ pub async fn create_server_container(
     .await?;
 
     let mut port_bindings = HashMap::new();
+    let bind_port_udp = format!("{}/udp", bind_port);
+    let a2s_port_udp = format!("{}/udp", a2s_port);
+    let rcon_port_udp = format!("{}/udp", rcon_port);
     port_bindings.insert(
-        format!("{}/udp", bind_port),
+        bind_port_udp.clone(),
         Some(vec![PortBinding {
             host_ip: Some("0.0.0.0".to_string()),
             host_port: Some(bind_port),
         }]),
     );
     port_bindings.insert(
-        format!("{}/udp", a2s_port),
+        a2s_port_udp.clone(),
         Some(vec![PortBinding {
             host_ip: Some("0.0.0.0".to_string()),
             host_port: Some(a2s_port),
         }]),
     );
     port_bindings.insert(
-        format!("{}/udp", rcon_port),
+        rcon_port_udp.clone(),
         Some(vec![PortBinding {
             host_ip: Some("0.0.0.0".to_string()),
             host_port: Some(rcon_port),
@@ -1700,7 +1703,7 @@ pub async fn create_server_container(
     let config = ContainerCreateBody {
         image: Some(get_image_name(&server.branch)),
         cmd: Some(args),
-        // exposed_ports: Some(vec!["17777/udp".to_string()]),
+        exposed_ports: Some(vec![bind_port_udp, a2s_port_udp, rcon_port_udp]),
         hostname: Some(container_name.to_string()),
         host_config: Some(host_config),
         networking_config: Some(s),
