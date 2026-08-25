@@ -19,7 +19,8 @@ use regex::Regex;
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    EntityTrait, FromJsonQueryResult,
+    DeriveActiveEnum, EntityTrait, EnumIter,
+    entity::prelude::StringLen,
     prelude::Uuid,
     sea_query::{self},
 };
@@ -57,12 +58,16 @@ use crate::{
     ToSchema,
     Eq,
     PartialEq,
-    FromJsonQueryResult,
+    EnumIter,
+    DeriveActiveEnum,
 )]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
 pub enum Branch {
     #[default]
+    #[sea_orm(string_value = "stable")]
     #[serde(rename = "stable")]
     Stable,
+    #[sea_orm(string_value = "experimental")]
     #[serde(rename = "experimental")]
     Experimental,
 }

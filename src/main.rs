@@ -23,7 +23,7 @@ use reqwest::StatusCode;
 use sea_orm::{ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter};
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
 };
@@ -102,7 +102,11 @@ async fn main() -> anyhow::Result<()> {
     println!("Using oidc issuer: {}", config.oidc_issuer);
 
     let docker = Docker::connect_with_defaults().expect("Couldn't connect to docker");
-    let ip = local_ip().unwrap();
+    let ip = std::env::var("ARSA_IP_ADDR")
+        .ok()
+        .and_then(|s| s.parse::<IpAddr>().ok())
+        .or_else(|| local_ip().ok())
+        .unwrap_or_else(|| IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)));
 
     let cors_layer = CorsLayer::new()
         .allow_methods([
