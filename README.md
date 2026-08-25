@@ -62,7 +62,7 @@ docker build -t arsa-backend .
 Run
 
 ```bash
-docker run --name arsa-backend -v arsa-db-volume:/app/db -v arsa-servers-volume:/app/ars/servers -v arsa-repo-volume:/app/ars/repo -v /var/run/docker.sock:/var/run/docker.sock -p 3000:3000 arsa-backend
+docker run --rm --name arsa-backend --env-file .env -v arsa-db-volume:/app/db -v arsa-servers-volume:/app/ars/servers -v arsa-repo-volume:/app/ars/repo -v /var/run/docker.sock:/var/run/docker.sock -p 3000:3000 arsa-backend
 ```
 
 Start / Stop
