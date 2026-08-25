@@ -1598,21 +1598,21 @@ pub async fn create_server_container(
     port_bindings.insert(
         format!("{}/udp", bind_port),
         Some(vec![PortBinding {
-            host_ip: None,
+            host_ip: Some("0.0.0.0".to_string()),
             host_port: Some(bind_port),
         }]),
     );
     port_bindings.insert(
         format!("{}/udp", a2s_port),
         Some(vec![PortBinding {
-            host_ip: None,
+            host_ip: Some("0.0.0.0".to_string()),
             host_port: Some(a2s_port),
         }]),
     );
     port_bindings.insert(
         format!("{}/udp", rcon_port),
         Some(vec![PortBinding {
-            host_ip: None,
+            host_ip: Some("0.0.0.0".to_string()),
             host_port: Some(rcon_port),
         }]),
     );
