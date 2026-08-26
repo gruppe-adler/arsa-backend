@@ -890,6 +890,7 @@ pub async fn start_server(
             if let Some(player_count) = update_player_count(&line) {
                 current_player_count = Some(player_count);
             }
+            line.clear();
         }
 
         let pos = buf.stream_position().await?;
