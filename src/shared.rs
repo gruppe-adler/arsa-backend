@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbErr};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbErr, EntityTrait};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
@@ -35,13 +35,18 @@ pub async fn log_action(
     };
 
     let log = log.insert(&state.db).await?;
-    let actor_name = actor.unwrap_or_default();
+    let actor_id = actor.unwrap_or_default();
+
+    let user = models::user::Entity::find_by_id(&actor_id)
+        .one(&state.db)
+        .await?;
+
     let log_response = crate::endpoints::log::GlobalLog {
         id: log.id,
         action: log.action.clone(),
         target: log.target,
-        actor_id: actor_name.clone(),
-        actor: actor_name,
+        actor: user.map_or(actor_id.clone(), |u| u.name),
+        actor_id,
         timestamp: log.timestamp,
     };
 
