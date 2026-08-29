@@ -25,6 +25,7 @@ use sea_orm::{
     sea_query::{self},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::HashMap,
     env, format,
@@ -1697,7 +1698,11 @@ pub async fn create_server_container(
         }
         args.push(format!("-{}", param.parameter));
         if let Some(arg_value) = &param.value {
-            args.push(arg_value.to_string());
+            let str_arg = match &arg_value {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            args.push(str_arg);
         }
     }
 
