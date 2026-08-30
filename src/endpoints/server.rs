@@ -359,12 +359,13 @@ pub async fn delete_log(
         .await?
         .ok_or(ArsaError::NotFound)?;
 
-    if LOG_DIR_NAME_REGEX.is_match(&log) {
+    if !LOG_DIR_NAME_REGEX.is_match(&log) {
         return Err(ArsaError::BadRequest);
     }
 
     let log_path = get_logs_path(&uuid, Some(log), None).await?;
-    if log_path.exists() || !log_path.is_dir() {
+
+    if !log_path.exists() || !log_path.is_dir() {
         return Err(ArsaError::NotFound);
     }
 
