@@ -117,11 +117,18 @@ async fn build_oidc_client() -> Result<KeycloakClient, ArsaError> {
     let config = AppConfig::get();
     let http_client = build_http_client();
 
-    let issuer_url = IssuerUrl::new(config.oidc_issuer.clone())
-        .map_err(|err| ArsaError::UnknownError(err.to_string()))?;
+    println!("Debug1: {}", config.oidc_issuer);
+    let issuer_url = IssuerUrl::new(config.oidc_issuer.clone()).map_err(|err| {
+        println!("OIDC: {:?}", err);
+        ArsaError::UnknownError(err.to_string())
+    })?;
+    println!("Debug2: {}", issuer_url);
     let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, &http_client)
         .await
-        .map_err(|err| ArsaError::UnknownError(err.to_string()))?;
+        .map_err(|err| {
+            println!("OIDC: {:?}", err);
+            ArsaError::UnknownError(err.to_string())
+        })?;
 
     let client = KeycloakClient::from_provider_metadata(
         provider_metadata,
@@ -129,8 +136,10 @@ async fn build_oidc_client() -> Result<KeycloakClient, ArsaError> {
         Some(ClientSecret::new(config.oidc_client_secret.clone())),
     )
     .set_redirect_uri(
-        RedirectUrl::new(config.oidc_callback_uri.clone())
-            .map_err(|err| ArsaError::UnknownError(err.to_string()))?,
+        RedirectUrl::new(config.oidc_callback_uri.clone()).map_err(|err| {
+            println!("OIDC: {:?}", err);
+            ArsaError::UnknownError(err.to_string())
+        })?,
     );
 
     Ok(client)
