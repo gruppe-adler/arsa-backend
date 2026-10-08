@@ -117,12 +117,11 @@ async fn build_oidc_client() -> Result<KeycloakClient, ArsaError> {
     let config = AppConfig::get();
     let http_client = build_http_client();
 
-    println!("Debug1: {}", config.oidc_issuer);
     let issuer_url = IssuerUrl::new(config.oidc_issuer.clone()).map_err(|err| {
         println!("OIDC: {:?}", err);
         ArsaError::UnknownError(err.to_string())
     })?;
-    println!("Debug2: {}", issuer_url);
+
     let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, &http_client)
         .await
         .map_err(|err| {
