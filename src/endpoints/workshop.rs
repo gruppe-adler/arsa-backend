@@ -125,6 +125,45 @@ pub async fn get_workshop(
     Ok(AppJson(WorkshopResponse { assets }))
 }
 
+/// Fetches the upstream asset detail page (`/workshop/{id}-asset.json`) and returns its
+/// `pageProps`. Asset IDs are upper-cased because upstream lookups are case-sensitive.
+async fn fetch_asset_page_props(id: &str) -> Result<serde_json::Value, ArsaError> {
+    let client = Client::new();
+    let slug = format!("{}-asset", id.to_ascii_uppercase());
+
+    let build_id = cached_build_id(&client).await?;
+    let mut response = client
+        .get(format!("{}/{slug}.json", upstream_detail_base(&build_id)))
+        .query(&[("id", &slug)])
+        .send()
+        .await?;
+
+    // A stale cached build id (Bohemia redeployed) 404s here too — refresh once and retry
+    // before treating it as a genuine "asset not found".
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        let build_id = refresh_build_id(&client).await?;
+        response = client
+            .get(format!("{}/{slug}.json", upstream_detail_base(&build_id)))
+            .query(&[("id", &slug)])
+            .send()
+            .await?;
+    }
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(ArsaError::NotFound);
+    }
+
+    if !response.status().is_success() {
+        return Err(ArsaError::UnknownError(format!(
+            "Upstream returned status {}",
+            response.status()
+        )));
+    }
+
+    let mut raw: serde_json::Value = response.json().await?;
+    Ok(raw["pageProps"].take())
+}
+
 /// Get full details for a single workshop asset, including its changelog
 ///
 /// The `id` path parameter is the asset ID (e.g. `5965550F24A0C152`).
@@ -146,44 +185,7 @@ pub async fn get_workshop(
 pub async fn get_workshop_detail(
     Path(id): Path<String>,
 ) -> Result<AppJson<AssetDetailResponse>, ArsaError> {
-    let client = Client::new();
-
-    let slug = format!("{id}-asset");
-
-    let build_id = cached_build_id(&client).await?;
-    let mut url = format!("{}/{slug}.json", upstream_detail_base(&build_id));
-    let mut response = client
-        .get(&url)
-        .query(&[("id", format!("{id}-asset"))])
-        .send()
-        .await?;
-
-    // A stale cached build id (Bohemia redeployed) 404s here too — refresh once and retry
-    // before treating it as a genuine "asset not found".
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        let build_id = refresh_build_id(&client).await?;
-        url = format!("{}/{slug}.json", upstream_detail_base(&build_id));
-        response = client
-            .get(&url)
-            .query(&[("id", format!("{id}-asset"))])
-            .send()
-            .await?;
-    }
-
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err(ArsaError::NotFound);
-    }
-
-    if !response.status().is_success() {
-        return Err(ArsaError::UnknownError(format!(
-            "Upstream returned status {}",
-            response.status()
-        )));
-    }
-
-    let raw: serde_json::Value = response.json().await?;
-
-    let props = &raw["pageProps"];
+    let props = fetch_asset_page_props(&id).await?;
 
     let asset: AssetDetail = serde_json::from_value(props["asset"].clone())?;
 
@@ -203,7 +205,7 @@ pub async fn get_workshop_detail(
 
 /// List scenarios and dependencies for a workshop asset
 ///
-/// Maps to the upstream `/workshop/{id}/scenarios.json` endpoint.
+/// Read from the upstream asset detail page (`/workshop/{id}-asset.json`).
 /// Returns the scenarios bundled with the asset's current version, plus the
 /// full resolved dependency list.
 #[utoipa::path(
@@ -222,43 +224,17 @@ pub async fn get_workshop_detail(
 pub async fn get_workshop_scenarios(
     Path(id): Path<String>,
 ) -> Result<AppJson<AssetScenariosResponse>, ArsaError> {
-    let client = Client::new();
+    // Uses the asset detail page rather than upstream's `/workshop/{id}/scenarios.json`:
+    // that page answers 404 `{"notFound":true}` for every asset without scenarios
+    // (libraries, effect mods, ...), which is indistinguishable from a missing asset.
+    // The detail page carries the same `assetVersionDetail.scenarios`/`dependencies`.
+    let props = fetch_asset_page_props(&id).await?;
 
-    // Upstream path: /workshop/{id}/scenarios.json?id={id}
-    // (the slug segment after the ID is not required — the query param drives resolution)
-    let build_id = cached_build_id(&client).await?;
-    let mut url = format!("{}/{id}/scenarios.json", upstream_detail_base(&build_id));
-    let mut response = client.get(&url).query(&[("id", &id)]).send().await?;
-
-    // A stale cached build id (Bohemia redeployed) 404s here too — refresh once and retry
-    // before treating it as a genuine "asset not found".
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        let build_id = refresh_build_id(&client).await?;
-        url = format!("{}/{id}/scenarios.json", upstream_detail_base(&build_id));
-        response = client.get(&url).query(&[("id", &id)]).send().await?;
-    }
-
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err(ArsaError::NotFound);
-    }
-
-    if !response.status().is_success() {
-        return Err(ArsaError::UnknownError(format!(
-            "Upstream returned status {}",
-            response.status()
-        )));
-    }
-
-    let raw: serde_json::Value = response.json().await?;
-
-    let props = &raw["pageProps"];
-
-    // The upstream embeds scenarios/dependencies inside assetVersionDetail
     let version_detail: AssetVersionDetail =
         serde_json::from_value(props["assetVersionDetail"].clone())?;
 
     Ok(AppJson(AssetScenariosResponse {
-        asset_id: id,
+        asset_id: id.to_ascii_uppercase(),
         scenarios: version_detail.scenarios,
         dependencies: version_detail.dependencies,
     }))
