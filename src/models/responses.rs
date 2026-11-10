@@ -125,6 +125,12 @@ pub enum ServerStatusUpdates {
     CreateImageFinished {
         pull_id: String,
     },
+    ScenariosUpdateFinished {
+        branch: crate::endpoints::server::Branch,
+        success: bool,
+        count: u32,
+        error: Option<String>,
+    },
     Error {
         error: String,
     },

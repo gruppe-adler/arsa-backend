@@ -159,6 +159,8 @@ async fn main() -> anyhow::Result<()> {
     ))
     .await?;
 
+    models::scenarios::migrate_composite_primary_key(&db).await?;
+
     db.get_schema_registry(module_path!().split("::").next().unwrap())
         .sync(&db)
         .await?;

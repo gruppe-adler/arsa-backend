@@ -1413,10 +1413,10 @@ pub fn send_message(
     state: &Arc<AppState>,
     status_update: &ServerStatusUpdates,
 ) -> Result<(), ArsaError> {
+    // Only fails when no websocket client is connected, which is not an error.
     let _ = state
         .channel
-        .send(serde_json::to_string(&status_update)?)
-        .expect("Couldn't send");
+        .send(serde_json::to_string(&status_update)?);
     Ok(())
 }
 

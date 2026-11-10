@@ -84,6 +84,7 @@ pub enum ArsaError {
     JsonRejection(JsonRejection),
     BollardError(bollard::errors::Error),
     NotFound,
+    Conflict,
     BadRequest,
     Unauthorized,
     UnknownError(String),
@@ -107,6 +108,11 @@ impl IntoResponse for ArsaError {
             ArsaError::NotFound => (
                 StatusCode::NOT_FOUND,
                 StatusCode::NOT_FOUND.to_string(),
+                Some(self),
+            ),
+            ArsaError::Conflict => (
+                StatusCode::CONFLICT,
+                StatusCode::CONFLICT.to_string(),
                 Some(self),
             ),
             ArsaError::UnknownError(message) => (
