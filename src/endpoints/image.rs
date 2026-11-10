@@ -1,8 +1,13 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
 use axum::{
     Extension,
     extract::{Path, State},
+    http::StatusCode,
 };
 use bollard::{
     container::LogOutput,
@@ -15,7 +20,8 @@ use bollard::{
 };
 use futures::StreamExt;
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, sea_query::OnConflict,
+    ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, TransactionTrait,
+    sea_query::OnConflict,
 };
 use tokio::time::{sleep, timeout};
 use uuid::Uuid;
@@ -252,42 +258,110 @@ pub async fn get_image_version(
     path = "/scenarios/{branch}",
     params(BranchParams),
     responses(
-        (status = OK, description = "Scenarios list updated", body = SuccessResponse),
+        (status = ACCEPTED, description = "Scenario update started. The result is sent over the websocket as a `scenariosUpdateFinished` message.", body = SuccessResponse),
         (status = NOT_FOUND, description = "Image not found", body = ErrorResponse),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to start image or parse scenarios", body = ErrorResponse),
+        (status = CONFLICT, description = "An update for this branch is already running", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to inspect image", body = ErrorResponse),
     )
 )]
-
 pub async fn update_scenarios_from_branch(
     State(state): State<Arc<AppState>>,
     Path(branch): Path<BranchParams>,
     Extension(claims): Extension<Claims>,
-) -> Result<AppJson<SuccessResponse>, ArsaError> {
+) -> Result<(StatusCode, AppJson<SuccessResponse>), ArsaError> {
     if !claims.has_role(&AppConfig::get().admin_role) {
         return Err(ArsaError::Unauthorized);
     }
 
-    let image_name = get_image_name(&branch.branch);
-    let inspect_result = state.docker.inspect_image(&image_name).await;
-    let _ = match inspect_result {
-        Ok(value) => value,
-        Err(err) => {
-            if let bollard::errors::Error::DockerResponseServerError {
-                status_code,
-                message: _,
-            } = &err
-                && *status_code == 404
-            {
-                return Err(ArsaError::NotFound);
-            } else {
-                return Err(err.into());
-            }
+    let branch = branch.branch;
+    let image_name = get_image_name(&branch);
+    if let Err(err) = state.docker.inspect_image(&image_name).await {
+        if let bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        } = &err
+        {
+            return Err(ArsaError::NotFound);
         }
-    };
+        return Err(err.into());
+    }
 
+    let guard = ScenarioUpdateGuard::acquire(branch).ok_or(ArsaError::Conflict)?;
+
+    /*
+        Listing takes ~16s, so it runs detached instead of inside the request.
+        Browsers don't keep a silent request open that long: creating the container adds a
+        network interface, and Firefox drops connections that stay quiet for 5s after a network
+        change. That cancelled the handler halfway through, leaving the container behind and
+        the list unchanged.
+    */
+    tokio::spawn(async move {
+        let _guard = guard;
+        let message = match update_scenarios(&state, branch, image_name).await {
+            Ok(count) => ServerStatusUpdates::ScenariosUpdateFinished {
+                branch,
+                success: true,
+                count,
+                error: None,
+            },
+            Err(err) => {
+                println!("Scenario update failed: {:?}", err);
+                ServerStatusUpdates::ScenariosUpdateFinished {
+                    branch,
+                    success: false,
+                    count: 0,
+                    error: Some(match err {
+                        ArsaError::UnknownError(message) => message,
+                        other => format!("{:?}", other),
+                    }),
+                }
+            }
+        };
+        if let Err(err) = send_message(&state, &message) {
+            println!("{:?}", err);
+        }
+    });
+
+    Ok((StatusCode::ACCEPTED, AppJson(SuccessResponse { success: true })))
+}
+
+/// Branches with a scenario update in progress, so two updates of one branch can't race.
+static SCENARIO_UPDATES_RUNNING: LazyLock<std::sync::Mutex<Vec<Branch>>> =
+    LazyLock::new(Default::default);
+
+struct ScenarioUpdateGuard(Branch);
+
+impl ScenarioUpdateGuard {
+    fn acquire(branch: Branch) -> Option<Self> {
+        let mut running = SCENARIO_UPDATES_RUNNING
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        if running.contains(&branch) {
+            return None;
+        }
+        running.push(branch);
+        Some(Self(branch))
+    }
+}
+
+impl Drop for ScenarioUpdateGuard {
+    fn drop(&mut self) {
+        SCENARIO_UPDATES_RUNNING
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .retain(|branch| *branch != self.0);
+    }
+}
+
+/// Lists the image's scenarios and replaces the stored list for `branch`.
+/// Returns the number of scenarios stored.
+async fn update_scenarios(
+    state: &Arc<AppState>,
+    branch: Branch,
+    image_name: String,
+) -> Result<u32, ArsaError> {
     let container_name = format!(
         "list-scenarios-{}-{}",
-        get_image_branch_as_string(&branch.branch),
+        get_image_branch_as_string(&branch),
         Uuid::new_v4()
     );
 
@@ -296,7 +370,7 @@ pub async fn update_scenarios_from_branch(
         .build();
 
     let config = ContainerCreateBody {
-        image: Some(image_name.clone()),
+        image: Some(image_name),
         cmd: Some(vec!["-listScenarios".to_string()]),
         host_config: Some(HostConfig {
             network_mode: Some("bridge".to_string()),
@@ -309,10 +383,60 @@ pub async fn update_scenarios_from_branch(
         .docker
         .create_container(Some(create_options), config)
         .await?;
-    state.docker.start_container(&container_name, None).await?;
+
+    let listed = list_scenarios(state, &container_name).await;
+
+    let _ = state
+        .docker
+        .remove_container(
+            &container_name,
+            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+        )
+        .await;
+
+    let (entry_count, scenarios) = listed?;
+
+    // Don't replace the stored list with a partial one.
+    if scenarios.is_empty() || (scenarios.len() as u32) < entry_count {
+        return Err(ArsaError::UnknownError(format!(
+            "Only parsed {} of {} scenarios from the server output, keeping the existing list",
+            scenarios.len(),
+            entry_count
+        )));
+    }
+
+    let count = scenarios.len() as u32;
+    let scenarios = scenarios
+        .into_iter()
+        .map(|(path, name)| models::scenarios::ActiveModel {
+            branch: Set(branch),
+            path: Set(path),
+            name: Set(name),
+        });
+
+    let txn = state.db.begin().await?;
+    models::scenarios::Entity::delete_many()
+        .filter(models::scenarios::Column::Branch.eq(branch))
+        .exec(&txn)
+        .await?;
+    models::scenarios::Entity::insert_many(scenarios)
+        .exec(&txn)
+        .await?;
+    txn.commit().await?;
+
+    Ok(count)
+}
+
+/// Starts the container and parses its `-listScenarios` output.
+/// Returns the announced scenario count and the parsed `(path, name)` pairs.
+async fn list_scenarios(
+    state: &Arc<AppState>,
+    container_name: &str,
+) -> Result<(u32, Vec<(String, String)>), ArsaError> {
+    state.docker.start_container(container_name, None).await?;
 
     let mut logs = state.docker.logs(
-        &container_name,
+        container_name,
         Some(LogsOptions {
             follow: true,
             stdout: true,
@@ -323,84 +447,60 @@ pub async fn update_scenarios_from_branch(
         }),
     );
 
-    let mut entry_count = 0_u32;
-    let mut scenarios = Vec::new();
-
     /*
-        When you start the server without a valid config.json,
-        the server throws an error while printing out the scenarios and the logs get 'stuck' (?).
-        So we gracefully stop the server with a 'SIGINT' after 15s which then prints the remaining scenarios to the log.
+        Without a TTY the server block-buffers stdout (8 KB), so the scenario list stalls
+        partway and the rest only appears when the process exits.
+        So we gracefully stop the server with a 'SIGINT' after 15s, which flushes the remaining scenarios to the log.
     */
-
-    let state_clone = state.clone();
-    let container_name_clone = container_name.clone();
-    tokio::spawn(async move {
+    let stop_state = state.clone();
+    let stop_container_name = container_name.to_string();
+    let stopper = tokio::spawn(async move {
         sleep(Duration::from_secs(15)).await;
-        let _ = state_clone
+        let _ = stop_state
             .docker
             .stop_container(
-                &container_name_clone,
+                &stop_container_name,
                 Some(StopContainerOptionsBuilder::new().signal("SIGINT").build()),
             )
             .await;
     });
 
+    let mut entry_count = 0_u32;
+    let mut scenarios: Vec<(String, String)> = Vec::new();
+
     let _ = timeout(Duration::from_secs(30), async {
-        loop {
-            tokio::task::yield_now().await;
-            if entry_count > 0 && entry_count == scenarios.len() as u32 {
-                break;
+        while let Some(chunk) = logs.next().await {
+            let Ok(LogOutput::StdOut { message }) = chunk else {
+                continue;
+            };
+            let line = String::from_utf8_lossy(&message);
+
+            if entry_count == 0
+                && let Some(count) = LOG_SCENARIOS_COUNT
+                    .captures(&line)
+                    .and_then(|matches| matches.name("MissionCount"))
+                    .and_then(|count| count.as_str().parse::<u32>().ok())
+            {
+                entry_count = count;
             }
 
-            if let Some(chunk) = logs.next().await
-                && let Ok(log_chunk) = chunk
-                && let LogOutput::StdOut { message } = log_chunk
+            if let Some(matches) = LOG_SCENARIOS_MISSION.captures(&line)
+                && let (Some(path), Some(name)) = (matches.name("Path"), matches.name("Name"))
+                && !scenarios.iter().any(|(known, _)| known == path.as_str())
             {
-                let line = String::from_utf8_lossy(&message);
-                if entry_count == 0
-                    && let Some(matches) = LOG_SCENARIOS_COUNT.captures(&line)
-                    && let Some(count) = matches
-                        .name("MissionCount")
-                        .and_then(|x| x.as_str().parse::<u32>().ok())
-                {
-                    entry_count = count;
-                }
+                scenarios.push((path.as_str().to_string(), name.as_str().to_string()));
+            }
 
-                if let Some(matches) = LOG_SCENARIOS_MISSION.captures(&line)
-                    && let Some(path) = matches.name("Path")
-                    && let Some(name) = matches.name("Name")
-                {
-                    scenarios.push((path.as_str().to_string(), name.as_str().to_string()));
-                }
+            if entry_count > 0 && scenarios.len() as u32 >= entry_count {
+                break;
             }
         }
     })
     .await;
 
-    let _ = state
-        .docker
-        .remove_container(
-            &container_name,
-            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-        )
-        .await;
+    stopper.abort();
 
-    let _ = models::scenarios::Entity::delete_many()
-        .filter(models::scenarios::Column::Branch.eq(branch.branch))
-        .exec(&state.db)
-        .await?;
-
-    let scenarios = scenarios.iter().map(|x| models::scenarios::ActiveModel {
-        branch: Set(branch.branch),
-        path: Set(x.0.clone()),
-        name: Set(x.1.clone()),
-    });
-
-    models::scenarios::Entity::insert_many(scenarios)
-        .exec(&state.db)
-        .await?;
-
-    Ok(AppJson(SuccessResponse { success: true }))
+    Ok((entry_count, scenarios))
 }
 
 #[utoipa::path(
