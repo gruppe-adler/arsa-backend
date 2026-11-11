@@ -43,7 +43,7 @@ use crate::{
         responses::{ErrorResponse, ImageVersionResponse, ServerStatusUpdates, SuccessResponse},
         server::ArsStatus,
     },
-    shared::{AppJson, ArsaError, log_action},
+    shared::{AppJson, ArsaError, harden_ars_host_config, log_action},
 };
 
 pub async fn pull_image(state: &Arc<AppState>, branch: &Branch, actor: String) {
@@ -371,11 +371,17 @@ async fn update_scenarios(
 
     let config = ContainerCreateBody {
         image: Some(image_name),
-        cmd: Some(vec!["-listScenarios".to_string()]),
-        host_config: Some(HostConfig {
+        // Without -profile the server uses $HOME, which isn't writable for ARSA_ARS_USER in older images.
+        cmd: Some(vec![
+            "-listScenarios".to_string(),
+            "-profile".to_string(),
+            "/tmp/profile".to_string(),
+        ]),
+        user: Some(AppConfig::get().ars_user.clone()),
+        host_config: Some(harden_ars_host_config(HostConfig {
             network_mode: Some("bridge".to_string()),
             ..Default::default()
-        }),
+        })),
         ..Default::default()
     };
 
