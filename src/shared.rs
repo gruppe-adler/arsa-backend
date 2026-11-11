@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use bollard::secret::HostConfig;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbErr, EntityTrait};
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,16 @@ use crate::{
         responses::{ErrorResponse, ServerStatusUpdates},
     },
 };
+
+/// Drops all capabilities and blocks privilege escalation for an Arma Reforger server container.
+/// The server only binds ports above 1024 and writes to files its own user owns, so it needs none.
+pub fn harden_ars_host_config(host_config: HostConfig) -> HostConfig {
+    HostConfig {
+        cap_drop: Some(vec!["ALL".to_string()]),
+        security_opt: Some(vec!["no-new-privileges".to_string()]),
+        ..host_config
+    }
+}
 
 pub async fn log_action(
     state: &Arc<AppState>,

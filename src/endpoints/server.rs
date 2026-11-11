@@ -45,7 +45,7 @@ use crate::{
     shared::{
         AppJson,
         ArsaError::{self, BadRequest},
-        log_action,
+        harden_ars_host_config, log_action,
     },
 };
 
@@ -1666,12 +1666,12 @@ pub async fn create_server_container(
         },
     ];
 
-    let host_config = HostConfig {
+    let host_config = harden_ars_host_config(HostConfig {
         mounts: Some(mounts),
         port_bindings: Some(port_bindings),
         network_mode: Some("bridge".to_string()),
         ..Default::default()
-    };
+    });
 
     let mut endpoints_config = HashMap::new();
     endpoints_config.insert(network, EndpointSettings::default());
@@ -1712,6 +1712,7 @@ pub async fn create_server_container(
         cmd: Some(args),
         exposed_ports: Some(vec![bind_port_udp, a2s_port_udp, rcon_port_udp]),
         hostname: Some(container_name.to_string()),
+        user: Some(AppConfig::get().ars_user.clone()),
         host_config: Some(host_config),
         networking_config: Some(s),
         ..Default::default()

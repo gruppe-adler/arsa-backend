@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub server_volume: String,
     pub repo_volume: String,
     pub ars_container: String,
+    /// `uid:gid` the Arma Reforger server containers run as. Must own the server and repo directories.
+    pub ars_user: String,
 }
 
 static CONFIG: OnceLock<AppConfig> = OnceLock::new();
@@ -52,6 +54,7 @@ impl AppConfig {
                 .unwrap_or("arsa-repo-volume".to_string()),
             ars_container: std::env::var("ARSA_ARS_CONTAINER")
                 .unwrap_or("ghcr.io/gruppe-adler/ars-image".to_string()),
+            ars_user: std::env::var("ARSA_ARS_USER").unwrap_or("1000:1000".to_string()),
         }
     }
 
