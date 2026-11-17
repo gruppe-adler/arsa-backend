@@ -88,6 +88,14 @@ Volumes created by an older, root-running backend contain files owned by root. F
 docker run --rm -v arsa-db-volume:/a -v arsa-servers-volume:/b -v arsa-repo-volume:/c alpine chown -R 1000:1000 /a /b /c
 ```
 
+### Crash dumps
+
+When a server crashes, its log shows `Application crashed! Generated memory dump: /tmp/<id>.dmp`. The crash reporter sends the dump to the developers automatically. The dump stays in the stopped container until the server is started again, which recreates the container. To keep a copy, run this before restarting (the container name is the server's UUID):
+
+```bash
+docker cp <server-uuid>:/tmp/<id>.dmp .
+```
+
 ## API Documentation
 
 Once running, access the interactive API documentation at:
