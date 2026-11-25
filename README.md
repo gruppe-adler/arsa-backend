@@ -82,10 +82,21 @@ The backend and the Arma Reforger server containers run as the unprivileged user
 - `ARSA_ARS_USER` (default `1000:1000`) is the `uid:gid` the server containers run as. They also run with all capabilities dropped and `no-new-privileges`.
 - With `ARSA_USE_VOLUME=false` (bind mounts), the server and repo directories on the host must be owned by that user.
 
-Volumes created by an older, root-running backend contain files owned by root. Fix them once before starting the new version:
+Data created by an older, root-running backend is owned by root. Servers still start, but they can't write into it:
+
+- **No new logs:** no new `logs_<timestamp>` folder appears, and the server output shows `cannot create directory ($logs:...)`.
+- **Mod downloads fail:** mods can't be downloaded into the addon repo.
+
+Fix it once before starting the new version. With volumes (`ARSA_USE_VOLUME=true`):
 
 ```bash
 docker run --rm -v arsa-db-volume:/a -v arsa-servers-volume:/b -v arsa-repo-volume:/c alpine chown -R 1000:1000 /a /b /c
+```
+
+With bind mounts (`ARSA_USE_VOLUME=false`), run this in the backend's working directory, which holds `./ars/servers` and `./ars/repo`:
+
+```bash
+sudo chown -R 1000:1000 ars
 ```
 
 ### Crash dumps
