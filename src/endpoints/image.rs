@@ -11,12 +11,12 @@ use axum::{
 };
 use bollard::{
     container::LogOutput,
+    models::{ContainerCreateBody, CreateImageInfo, HostConfig},
     query_parameters::{
         CreateContainerOptionsBuilder, CreateImageOptions, ListContainersOptionsBuilder,
         LogsOptions, RemoveContainerOptionsBuilder, RemoveImageOptionsBuilder,
         StopContainerOptionsBuilder,
     },
-    secret::{ContainerCreateBody, CreateImageInfo, HostConfig},
 };
 use futures::StreamExt;
 use sea_orm::{

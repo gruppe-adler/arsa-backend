@@ -14,8 +14,8 @@ use axum_cookie::{CookieLayer, CookieManager};
 use axum_extra::{TypedHeader, headers};
 use bollard::{
     Docker,
+    models::ContainerSummaryStateEnum,
     query_parameters::{EventsOptionsBuilder, ListContainersOptionsBuilder},
-    secret::ContainerSummaryStateEnum,
 };
 use futures::{SinkExt, StreamExt};
 use local_ip_address::local_ip;

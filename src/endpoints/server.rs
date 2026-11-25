@@ -3,13 +3,13 @@ use axum::{
     extract::{Json, Path, State},
 };
 use bollard::{
+    models::{
+        ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, EndpointSettings,
+        HostConfig, Mount, MountType, NetworkingConfig, PortBinding,
+    },
     query_parameters::{
         CreateContainerOptionsBuilder, InspectContainerOptionsBuilder,
         RemoveContainerOptionsBuilder, StatsOptionsBuilder,
-    },
-    secret::{
-        ContainerCreateBody, ContainerStateStatusEnum, ContainerStatsResponse, EndpointSettings,
-        HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
     },
 };
 use chrono::DateTime;
@@ -1626,9 +1626,9 @@ pub async fn create_server_container(
     let config = AppConfig::get();
 
     let mount_typ = if config.use_volume {
-        MountTypeEnum::VOLUME
+        MountType::VOLUME
     } else {
-        MountTypeEnum::BIND
+        MountType::BIND
     };
 
     let arsa_server_source = if config.use_volume {
