@@ -206,11 +206,9 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_workshop_detail))
         .routes(routes!(get_workshop_scenarios));
 
-    let log_routes =
-        OpenApiRouter::new().routes(routes!(get_global_logs));
+    let log_routes = OpenApiRouter::new().routes(routes!(get_global_logs));
 
-    let defaults_routes =
-        OpenApiRouter::new().routes(routes!(get_defaults, put_defaults));
+    let defaults_routes = OpenApiRouter::new().routes(routes!(get_defaults, put_defaults));
 
     let api_routes_v2 = OpenApiRouter::new()
         .nest("/v2", server_routes)
