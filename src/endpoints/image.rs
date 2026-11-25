@@ -209,7 +209,7 @@ const VERSION_LABEL: &str = "de.grad.arsa.version";
     tag = "image",
     path = "/image-version/{branch}",
     params(BranchParams),
-    responses((status = OK, body = ImageVersionResponse))
+    responses((status = OK, description = "Version of the image for the branch, or \"n/a\" if it isn't pulled", body = ImageVersionResponse))
 )]
 pub async fn get_image_version(
     State(state): State<Arc<AppState>>,
@@ -545,7 +545,7 @@ pub async fn get_scenarios_from_branch(
     tag = "image",
     path = "/pull/image/{branch}",
     params(BranchParams),
-    responses((status = OK, body = SuccessResponse))
+    responses((status = OK, description = "Image pull started, progress is sent over the WebSocket", body = SuccessResponse))
 )]
 pub async fn get_pull_image(
     State(state): State<Arc<AppState>>,
@@ -621,7 +621,7 @@ pub async fn get_pull_image(
     get,
     tag = "image",
     path = "/status",
-    responses((status = OK, body = crate::models::server::ArsStatus))
+    responses((status = OK, description = "Current status of the ARS service", body = crate::models::server::ArsStatus))
 )]
 pub async fn get_status(
     State(state): State<Arc<AppState>>,
