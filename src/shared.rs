@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use bollard::secret::HostConfig;
+use bollard::models::HostConfig;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbErr, EntityTrait};
 use serde::{Deserialize, Serialize};
