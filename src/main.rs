@@ -171,7 +171,7 @@ async fn main() -> anyhow::Result<()> {
         .exec(&db)
         .await?;
 
-    let server_id_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())
+    let server_id_routes = OpenApiRouter::new()
         .routes(routes!(get_server, delete_server))
         .routes(routes!(start_server))
         .routes(routes!(stop_server))
@@ -189,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .routes(routes!(is_server_running));
 
-    let server_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())
+    let server_routes = OpenApiRouter::new()
         .nest("/server", server_id_routes)
         .routes(routes!(post_server, put_server))
         .routes(routes!(get_servers))
@@ -201,18 +201,16 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(get_scenarios_from_branch))
         .routes(routes!(get_status));
 
-    let workshop_routes = OpenApiRouter::with_openapi(ApiDoc::openapi())
+    let workshop_routes = OpenApiRouter::new()
         .routes(routes!(get_workshop))
         .routes(routes!(get_workshop_detail))
         .routes(routes!(get_workshop_scenarios));
 
-    let log_routes =
-        OpenApiRouter::with_openapi(ApiDoc::openapi()).routes(routes!(get_global_logs));
+    let log_routes = OpenApiRouter::new().routes(routes!(get_global_logs));
 
-    let defaults_routes =
-        OpenApiRouter::with_openapi(ApiDoc::openapi()).routes(routes!(get_defaults, put_defaults));
+    let defaults_routes = OpenApiRouter::new().routes(routes!(get_defaults, put_defaults));
 
-    let api_routes_v2 = OpenApiRouter::with_openapi(ApiDoc::openapi())
+    let api_routes_v2 = OpenApiRouter::new()
         .nest("/v2", server_routes)
         .nest("/v2", workshop_routes)
         .nest("/v2", log_routes)
@@ -238,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api", api_routes_v2)
         .nest(
             "/api/v2/auth",
-            OpenApiRouter::with_openapi(ApiDoc::openapi()).routes(routes!(user_claims)),
+            OpenApiRouter::new().routes(routes!(user_claims)),
         )
         .route_layer(
             ServiceBuilder::new()
@@ -248,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", any(ws_handler))
         .nest(
             "/api/v2/auth",
-            OpenApiRouter::with_openapi(ApiDoc::openapi())
+            OpenApiRouter::new()
                 .routes(routes!(login))
                 .routes(routes!(callback))
                 .routes(routes!(logout)),

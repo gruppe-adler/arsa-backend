@@ -94,17 +94,6 @@ pub struct ScenarioEntry {
     pub name: String,
 }
 
-#[allow(dead_code)] // Needed for utoipa
-#[derive(IntoParams, Deserialize, ToSchema)]
-pub struct LogFileParams {
-    /// Log folder name
-    #[param(example = "profileDir")]
-    pub log: String,
-    /// Log file type
-    #[param(example = "console.log")]
-    pub log_type: LogType,
-}
-
 async fn get_config_json_path(uuid: &Uuid) -> Result<PathBuf, ArsaError> {
     Ok(get_config_path(uuid).await?.join("config.json"))
 }
@@ -280,7 +269,12 @@ pub async fn get_logs(
     get,
     tag = "server",
     path = "/{id}/logs/{log}/{log_type}",
-    params(IdParams, LogFileParams),
+    // Tuple form so utoipa merges these with the params it infers from the `Path` tuple extractor.
+    params(
+        ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
+        ("log" = String, Path, description = "Log folder name", example = "profileDir"),
+        ("log_type" = LogType, Path, description = "Log file type", example = "console.log"),
+    ),
     responses(
         (status = OK, description = "Log file content", body = FileContentResponse),
         (status = NOT_FOUND, description = "Server or log was not found", body = ErrorResponse),
@@ -342,7 +336,11 @@ pub async fn get_crash_log(
     delete,
     path = "/{id}/logs/{log}",
     tag = "server",
-    params(IdParams),
+    // Tuple form so utoipa merges these with the params it infers from the `Path` tuple extractor.
+    params(
+        ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
+        ("log" = String, Path, description = "Log folder name", example = "profileDir"),
+    ),
     responses(
         (status = OK, description = "The log was deleted", body = SuccessResponse),
         (status = NOT_FOUND, description = "Server or log was not found", body = ErrorResponse),
