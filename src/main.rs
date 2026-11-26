@@ -375,17 +375,8 @@ async fn handle_socket(socket: WebSocket, _who: SocketAddr, state: Arc<AppState>
     let (sender, mut receiver) = socket.split();
     let sender = Arc::new(tokio::sync::Mutex::new(sender));
 
-    let mut rx = state.channel.subscribe();
-
-    let sender_clone = sender.clone();
-    let _send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            let mut s = sender_clone.lock().await;
-            if let Err(err) = s.send(Message::text(msg)).await {
-                println!("Error during ws send: {err}");
-            }
-        }
-    });
+    let rx = state.channel.subscribe();
+    let send_task = tokio::spawn(forward_broadcast(rx, sender.clone()));
 
     while let Some(msg) = receiver.next().await {
         if let Ok(msg) = msg {
@@ -406,6 +397,32 @@ async fn handle_socket(socket: WebSocket, _who: SocketAddr, state: Arc<AppState>
             let mut s = sender.lock().await;
             send_close_message(&mut s, 1011, &format!("Error occurred: {}", error)).await;
             break;
+        }
+    }
+
+    // The client is gone, stop forwarding broadcasts to it.
+    send_task.abort();
+}
+
+/// Forwards broadcast messages to a WebSocket client until the client or the channel goes away.
+async fn forward_broadcast<S>(mut rx: broadcast::Receiver<String>, sink: Arc<Mutex<S>>)
+where
+    S: futures::Sink<Message> + Unpin,
+    S::Error: std::fmt::Display,
+{
+    loop {
+        match rx.recv().await {
+            Ok(msg) => {
+                if let Err(err) = sink.lock().await.send(Message::text(msg)).await {
+                    println!("Error during ws send: {err}");
+                    break;
+                }
+            }
+            // A slow client missed the oldest messages. Keep forwarding the newer ones instead of going silent.
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                println!("WebSocket client lagged behind, skipped {skipped} messages");
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
         }
     }
 }
@@ -471,6 +488,51 @@ mod tests {
         assert!(!LOG_DIR_NAME_REGEX.is_match("logs_2026_03-14_15-21-11"));
         assert!(!LOG_DIR_NAME_REGEX.is_match("../logs_2026_03-14_15-21-11"));
         assert!(!LOG_DIR_NAME_REGEX.is_match("/logs_2026_03-14_15-21-11/"));
+    }
+
+    #[tokio::test]
+    async fn forward_broadcast_survives_lag() {
+        use axum::extract::ws::Message;
+        use futures::StreamExt;
+        use std::sync::Arc;
+        use tokio::sync::{Mutex, broadcast};
+
+        let (tx, rx) = broadcast::channel(4);
+        // Overflow the channel before the forwarder runs, so its first recv() lags.
+        for i in 0..10 {
+            tx.send(format!("msg{i}")).unwrap();
+        }
+
+        let (sink, stream) = futures::channel::mpsc::unbounded::<Message>();
+        let task = tokio::spawn(super::forward_broadcast(rx, Arc::new(Mutex::new(sink))));
+        tokio::task::yield_now().await;
+        tx.send("after-lag".to_string()).unwrap();
+        drop(tx);
+        task.await.unwrap();
+
+        let received: Vec<String> = stream
+            .map(|m| m.into_text().unwrap().to_string())
+            .collect()
+            .await;
+        assert_eq!(received, ["msg6", "msg7", "msg8", "msg9", "after-lag"]);
+    }
+
+    #[tokio::test]
+    async fn forward_broadcast_stops_when_client_is_gone() {
+        use axum::extract::ws::Message;
+        use std::sync::Arc;
+        use tokio::sync::{Mutex, broadcast};
+
+        let (tx, rx) = broadcast::channel(4);
+        let (sink, stream) = futures::channel::mpsc::unbounded::<Message>();
+        drop(stream);
+        let task = tokio::spawn(super::forward_broadcast(rx, Arc::new(Mutex::new(sink))));
+        tx.send("msg".to_string()).unwrap();
+        // Must finish on the failed send even though the channel is still open.
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("forwarder kept running after the client went away")
+            .unwrap();
     }
 
     #[test]
