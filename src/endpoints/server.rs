@@ -41,6 +41,10 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     AppState,
     config::AppConfig,
+    endpoints::port_group::{
+        find_port_conflicts, not_a_port_group_error, port_conflict_error, ports_allowed,
+        require_allowed_ports, server_ports,
+    },
     models::{self, log::LogAction, player, requests::*, responses::*},
     shared::{
         AppJson,
@@ -696,7 +700,8 @@ pub async fn put_profile_file(
     path = "/{id}/start", params(IdParams),
     responses(
         (status = OK, description = "Server was started and/or is running", body = SuccessResponse),
-        (status = NOT_FOUND, description = "Server was not found", body = ErrorResponse)
+        (status = NOT_FOUND, description = "Server was not found", body = ErrorResponse),
+        (status = CONFLICT, description = "A port of the server is already in use, or only port groups are allowed and the server uses custom ports", body = PortConflictResponse)
     )
 )]
 pub async fn start_server(
@@ -729,6 +734,7 @@ pub async fn start_server(
                 {
                     return Ok(AppJson(SuccessResponse { success: true }));
                 } else {
+                    check_port_conflicts(&state, &server).await?;
                     state
                         .clone()
                         .docker
@@ -748,6 +754,7 @@ pub async fn start_server(
             } = &err
                 && *status_code == 404
             {
+                check_port_conflicts(&state, &server).await?;
                 create_server_container(state.clone(), id, &server).await?;
             } else {
                 return Err(err.into());
@@ -755,7 +762,15 @@ pub async fn start_server(
         }
     }
 
-    state.docker.start_container(&container_name, None).await?;
+    if let Err(err) = state.docker.start_container(&container_name, None).await {
+        // Something outside ARSA (or a server ARSA doesn't know is running) holds a port.
+        if let Some(port) = port_in_use_error(&err) {
+            let ports = port.map_or_else(|| server_ports(&server.config).to_vec(), |p| vec![p]);
+            let conflicts = find_port_conflicts(&state, &server).await?;
+            return Err(port_conflict_error(&state, &server, conflicts, ports).await);
+        }
+        return Err(err.into());
+    }
 
     let _ = log_action(
         &state,
@@ -917,6 +932,45 @@ pub async fn start_server(
     }
 
     Ok(AppJson(SuccessResponse { success: true }))
+}
+
+/// Fails with a port conflict when the server uses custom ports while only port groups are
+/// allowed, or when a running server already uses one of its ports.
+async fn check_port_conflicts(
+    state: &Arc<AppState>,
+    server: &models::server::Model,
+) -> Result<(), ArsaError> {
+    if !ports_allowed(state, &server.config).await? {
+        return Err(not_a_port_group_error(state, server).await);
+    }
+
+    let conflicts = find_port_conflicts(state, server).await?;
+    if conflicts.is_empty() {
+        return Ok(());
+    }
+
+    let mut ports: Vec<u16> = conflicts.iter().flat_map(|c| c.ports.clone()).collect();
+    ports.sort_unstable();
+    ports.dedup();
+    Err(port_conflict_error(state, server, conflicts, ports).await)
+}
+
+/// Recognizes Docker's error for a host port that is already bound.
+/// Returns `Some(port)` when the message names the port, `Some(None)` when it doesn't.
+fn port_in_use_error(err: &bollard::errors::Error) -> Option<Option<u16>> {
+    let bollard::errors::Error::DockerResponseServerError { message, .. } = err else {
+        return None;
+    };
+    if !message.contains("port is already allocated") && !message.contains("address already in use")
+    {
+        return None;
+    }
+    Some(
+        PORT_IN_ERROR_REGEX
+            .captures(message)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse().ok()),
+    )
 }
 
 pub async fn server_update_player_count(
@@ -1166,6 +1220,8 @@ pub async fn post_server(
     Extension(claims): Extension<super::auth::Claims>,
     AppJson(params): AppJson<models::server::Model>,
 ) -> Result<AppJson<UuidResponse>, ArsaError> {
+    require_allowed_ports(&state, &params.config).await?;
+
     let uuid = models::server::ActiveModel {
         name: Set(params.name.to_owned()),
         is_running: Set(params.is_running.to_owned()),
@@ -1288,6 +1344,8 @@ pub async fn put_server(
     Extension(claims): Extension<super::auth::Claims>,
     AppJson(params): AppJson<models::server::Model>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
+    require_allowed_ports(&state, &params.config).await?;
+
     let server = models::server::Entity::find_by_id(params.uuid)
         .one(&state.db)
         .await?
@@ -1396,6 +1454,10 @@ pub static LOG_TOTAL_PLAYERS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new("Total number of players: (?P<totalPlayers>\\d*)").expect("Regex is invalid")
 });
 
+/// Finds the port in Docker errors like `Bind for 0.0.0.0:2001 failed: port is already allocated`.
+static PORT_IN_ERROR_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:\d{1,3}\.){3}\d{1,3}:(\d{1,5})").expect("Regex is invalid"));
+
 pub static LOG_SCENARIOS_COUNT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(".Official scenarios \\((?P<MissionCount>\\d*) entries\\)")
         .expect("Regex is invalid")
@@ -1412,9 +1474,7 @@ pub fn send_message(
     status_update: &ServerStatusUpdates,
 ) -> Result<(), ArsaError> {
     // Only fails when no websocket client is connected, which is not an error.
-    let _ = state
-        .channel
-        .send(serde_json::to_string(&status_update)?);
+    let _ = state.channel.send(serde_json::to_string(&status_update)?);
     Ok(())
 }
 
@@ -1724,4 +1784,35 @@ async fn create_dirs(uuid: Uuid) -> Result<(), ArsaError> {
     fs::create_dir_all(get_config_path(&uuid).await?).await?;
     fs::create_dir_all(get_profiles_path(&uuid).await?).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::port_in_use_error;
+
+    fn docker_error(message: &str) -> bollard::errors::Error {
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 500,
+            message: message.to_string(),
+        }
+    }
+
+    #[test]
+    fn detects_port_already_allocated() {
+        let err = docker_error(
+            "driver failed programming external connectivity on endpoint x (abc): Bind for 0.0.0.0:2002 failed: port is already allocated",
+        );
+        assert_eq!(port_in_use_error(&err), Some(Some(2002)));
+    }
+
+    #[test]
+    fn detects_address_in_use_without_port() {
+        let err = docker_error("listen udp: bind: address already in use");
+        assert_eq!(port_in_use_error(&err), Some(None));
+    }
+
+    #[test]
+    fn ignores_other_errors() {
+        assert_eq!(port_in_use_error(&docker_error("No such image")), None);
+    }
 }

@@ -43,7 +43,9 @@ use uuid::Uuid;
 
 use crate::{
     config::AppConfig,
-    endpoints::{auth::*, defaults::*, image::*, log::*, server::*, workshop::*},
+    endpoints::{
+        auth::*, defaults::*, image::*, log::*, port_group::*, server::*, settings::*, workshop::*,
+    },
     middleware::{auth_middleware, get_claims},
     models::{
         requests::EditProfileFileRequest,
@@ -68,6 +70,8 @@ mod shared;
         (name = "image", description = "Docker image endpoints"),
         (name = "log", description = "Global log endpoints"),
         (name = "defaults", description = "Global server defaults endpoints"),
+        (name = "port-group", description = "Port group endpoints"),
+        (name = "settings", description = "Host-wide settings endpoints"),
         (name = "auth", description = "Authentication endpoints")
     ),
     paths(
@@ -210,11 +214,19 @@ async fn main() -> anyhow::Result<()> {
 
     let defaults_routes = OpenApiRouter::new().routes(routes!(get_defaults, put_defaults));
 
+    let port_group_routes = OpenApiRouter::new()
+        .routes(routes!(get_port_groups, post_port_group))
+        .routes(routes!(put_port_group, delete_port_group));
+
+    let settings_routes = OpenApiRouter::new().routes(routes!(get_settings, put_settings));
+
     let api_routes_v2 = OpenApiRouter::new()
         .nest("/v2", server_routes)
         .nest("/v2", workshop_routes)
         .nest("/v2", log_routes)
-        .nest("/v2", defaults_routes);
+        .nest("/v2", defaults_routes)
+        .nest("/v2", port_group_routes)
+        .nest("/v2", settings_routes);
 
     let (tx, _rx) = broadcast::channel(50);
     let app_state = Arc::new(AppState {

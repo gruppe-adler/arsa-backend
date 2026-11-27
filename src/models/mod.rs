@@ -1,10 +1,12 @@
 pub mod defaults;
 pub mod log;
 pub mod player;
+pub mod port_group;
 pub mod pull_log;
 pub mod requests;
 pub mod responses;
 pub mod scenarios;
 pub mod server;
+pub mod settings;
 pub mod user;
 pub mod workshop;

@@ -17,7 +17,7 @@ use crate::{
     models::{
         self,
         log::LogAction,
-        responses::{ErrorResponse, ServerStatusUpdates},
+        responses::{ErrorResponse, PortConflictResponse, ServerStatusUpdates},
     },
 };
 
@@ -96,7 +96,13 @@ pub enum ArsaError {
     BollardError(bollard::errors::Error),
     NotFound,
     Conflict,
+    /// 409 with a message for the user
+    ConflictMessage(String),
+    /// 409 when a server's ports are taken, with the free port groups to pick from
+    PortConflict(PortConflictResponse),
     BadRequest,
+    /// 400 with a message for the user
+    BadRequestMessage(String),
     Unauthorized,
     UnknownError(String),
     IOError(std::io::Error),
@@ -107,7 +113,17 @@ pub enum ArsaError {
 impl IntoResponse for ArsaError {
     fn into_response(self) -> Response {
         dbg!(&self);
+        if let ArsaError::PortConflict(conflict) = self {
+            return (StatusCode::CONFLICT, AppJson(conflict)).into_response();
+        }
         let (status, message, err) = match &self {
+            ArsaError::PortConflict(_) => unreachable!("handled above"),
+            ArsaError::ConflictMessage(message) => {
+                (StatusCode::CONFLICT, message.clone(), Some(self))
+            }
+            ArsaError::BadRequestMessage(message) => {
+                (StatusCode::BAD_REQUEST, message.clone(), Some(self))
+            }
             ArsaError::JsonRejection(rejection) => {
                 (rejection.status(), rejection.body_text(), None)
             }

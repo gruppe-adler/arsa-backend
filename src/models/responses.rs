@@ -95,6 +95,40 @@ pub struct ProfileFileListResponse {
     pub files: Vec<String>,
 }
 
+/// A running server holding some of the ports another server needs.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PortConflict {
+    pub uuid: String,
+    pub name: String,
+    /// The ports both servers want
+    pub ports: Vec<u16>,
+}
+
+/// Why a server's ports can't be used.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PortConflictReason {
+    /// Another running server or a program on the host holds the ports.
+    PortsInUse,
+    /// Only port groups are allowed and the server uses custom ports.
+    NotAPortGroup,
+}
+
+/// Returned with 409 when a server can't start because of its ports.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PortConflictResponse {
+    pub reason: PortConflictReason,
+    pub message: String,
+    /// The ports that are taken
+    pub ports: Vec<u16>,
+    /// Running ARSA servers holding the ports. Empty when something outside ARSA holds them.
+    pub conflicts: Vec<PortConflict>,
+    /// Port groups no running server uses, to switch to
+    pub free_port_groups: Vec<models::port_group::Model>,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponse {
     pub message: String,
