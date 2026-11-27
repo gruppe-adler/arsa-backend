@@ -2,11 +2,13 @@ use axum::{
     Extension,
     extract::{Path, State},
 };
+use bollard::models::PortBinding;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
+    QueryOrder, TransactionTrait,
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use utoipa::IntoParams;
 use uuid::Uuid;
 
@@ -17,13 +19,14 @@ use crate::{
     endpoints::settings::load_settings,
     models::{
         self,
+        log::LogAction,
         port_group::{MAX_GAME_PORT, MIN_GAME_PORT, PortGroupRequest},
         responses::{
             ErrorResponse, PortConflict, PortConflictReason, PortConflictResponse, SuccessResponse,
         },
         server::ServerConfig,
     },
-    shared::{AppJson, ArsaError},
+    shared::{AppJson, ArsaError, log_action},
 };
 
 /// Message for saving a server with custom ports while only port groups are allowed.
@@ -44,27 +47,68 @@ pub fn server_ports(config: &ServerConfig) -> [u16; 3] {
     [config.bind_port, config.rcon.port, config.a2s.port]
 }
 
+/// The host ports the server's container binds, or `None` when there is no such container.
+///
+/// These can differ from the saved config: ports changed while a server runs only take effect
+/// when it is started again.
+async fn container_host_ports(state: &Arc<AppState>, uuid: Uuid) -> Option<Vec<u16>> {
+    let inspect = state
+        .docker
+        .inspect_container(&uuid.to_string(), None)
+        .await
+        .ok()?;
+    let ports = host_ports(inspect.host_config?.port_bindings?);
+    (!ports.is_empty()).then_some(ports)
+}
+
+/// The host ports of a container's port bindings, sorted and without duplicates.
+fn host_ports(port_bindings: HashMap<String, Option<Vec<PortBinding>>>) -> Vec<u16> {
+    let mut ports: Vec<u16> = port_bindings
+        .into_values()
+        .flatten()
+        .flatten()
+        .filter_map(|binding| binding.host_port?.parse().ok())
+        .collect();
+    ports.sort_unstable();
+    ports.dedup();
+    ports
+}
+
+/// Running servers other than `uuid`, with the host ports each one holds.
 async fn running_servers_except(
     state: &Arc<AppState>,
     uuid: Uuid,
-) -> Result<Vec<models::server::Model>, ArsaError> {
-    Ok(models::server::Entity::find()
+) -> Result<Vec<(models::server::Model, Vec<u16>)>, ArsaError> {
+    let servers = models::server::Entity::find()
         .filter(models::server::Column::IsRunning.eq(true))
         .filter(models::server::Column::Uuid.ne(uuid))
         .all(&state.db)
-        .await?)
+        .await?;
+
+    let mut running = Vec::with_capacity(servers.len());
+    for server in servers {
+        let ports = match container_host_ports(state, server.uuid).await {
+            Some(ports) => ports,
+            None => server_ports(&server.config).to_vec(),
+        };
+        running.push((server, ports));
+    }
+    Ok(running)
 }
 
-/// Port groups whose ports no running server (other than `uuid`) uses.
+/// Port groups whose ports no running server (other than `uuid`) uses and that contain none of
+/// the `taken` ports.
 pub async fn free_port_groups(
     state: &Arc<AppState>,
     uuid: Uuid,
+    taken: &[u16],
 ) -> Result<Vec<models::port_group::Model>, ArsaError> {
-    let used: Vec<u16> = running_servers_except(state, uuid)
+    let mut used: Vec<u16> = running_servers_except(state, uuid)
         .await?
-        .iter()
-        .flat_map(|server| server_ports(&server.config))
+        .into_iter()
+        .flat_map(|(_, ports)| ports)
         .collect();
+    used.extend_from_slice(taken);
 
     Ok(all_port_groups(state)
         .await?
@@ -83,8 +127,7 @@ pub async fn find_port_conflicts(
     Ok(running_servers_except(state, server.uuid)
         .await?
         .into_iter()
-        .filter_map(|other| {
-            let other_ports = server_ports(&other.config);
+        .filter_map(|(other, other_ports)| {
             let mut shared: Vec<u16> = ports
                 .iter()
                 .copied()
@@ -137,7 +180,7 @@ pub async fn not_a_port_group_error(
     state: &Arc<AppState>,
     server: &models::server::Model,
 ) -> ArsaError {
-    match free_port_groups(state, server.uuid).await {
+    match free_port_groups(state, server.uuid, &[]).await {
         Ok(free_port_groups) => ArsaError::PortConflict(PortConflictResponse {
             reason: PortConflictReason::NotAPortGroup,
             message: PORT_GROUPS_ONLY_MESSAGE.to_string(),
@@ -176,7 +219,9 @@ pub async fn port_conflict_error(
         )
     };
 
-    match free_port_groups(state, server.uuid).await {
+    // Leave out groups with a taken port. When something outside ARSA holds the ports, no running
+    // server uses them, so this is what keeps the server's own group from being offered.
+    match free_port_groups(state, server.uuid, &ports).await {
         Ok(free_port_groups) => ArsaError::PortConflict(PortConflictResponse {
             reason: PortConflictReason::PortsInUse,
             message,
@@ -305,7 +350,7 @@ pub async fn post_port_group(
     params(PortGroupIdParams),
     request_body = PortGroupRequest,
     responses(
-        (status = OK, description = "The port group was updated", body = models::port_group::Model),
+        (status = OK, description = "The port group was updated. Servers on the group move to its new ports; running ones use them once started again.", body = models::port_group::Model),
         (status = BAD_REQUEST, description = "Invalid name or port", body = ErrorResponse),
         (status = NOT_FOUND, description = "Port group was not found", body = ErrorResponse),
         (status = CONFLICT, description = "The name is taken or the ports overlap another group", body = ErrorResponse),
@@ -320,17 +365,74 @@ pub async fn put_port_group(
 ) -> Result<AppJson<models::port_group::Model>, ArsaError> {
     require_admin(&claims)?;
 
-    let group = models::port_group::Entity::find_by_id(id)
+    let old = models::port_group::Entity::find_by_id(id)
         .one(&state.db)
         .await?
         .ok_or(ArsaError::NotFound)?;
     let name = validate(&state, &request, Some(id)).await?;
 
-    let mut group: models::port_group::ActiveModel = group.into();
+    let txn = state.db.begin().await?;
+
+    let mut group: models::port_group::ActiveModel = old.clone().into();
     group.name = Set(name);
     group.game_port = Set(request.game_port);
+    let updated = group.update(&txn).await?;
+    let moved = move_group_servers(&txn, &old, &updated).await?;
+    txn.commit().await?;
 
-    Ok(AppJson(group.update(&state.db).await?))
+    for uuid in moved {
+        let _ = log_action(
+            &state,
+            LogAction::ServerUpdated,
+            Some(uuid),
+            Some(claims.get_user()),
+        )
+        .await;
+    }
+
+    Ok(AppJson(updated))
+}
+
+/// Moves the servers on the `old` group's ports to the `new` group's ports and returns their ids.
+///
+/// A server belongs to a group by its ports, so without this a changed game port would leave the
+/// group's servers on custom ports, which can't be used while only port groups are allowed.
+async fn move_group_servers(
+    db: &impl ConnectionTrait,
+    old: &models::port_group::Model,
+    new: &models::port_group::Model,
+) -> Result<Vec<Uuid>, ArsaError> {
+    let mut moved = Vec::new();
+    if old.game_port == new.game_port {
+        return Ok(moved);
+    }
+    for server in models::server::Entity::find().all(db).await? {
+        if server_ports(&server.config) != old.ports() {
+            continue;
+        }
+        let mut config = server.config.clone();
+        move_to_port_group(&mut config, old, new);
+        moved.push(server.uuid);
+        let mut server: models::server::ActiveModel = server.into();
+        server.config = Set(config);
+        server.update(db).await?;
+    }
+    Ok(moved)
+}
+
+/// Moves a config on the `old` group's ports to the `new` group's ports. The public port follows
+/// only when it was the game port, so a different port forwarded through NAT is kept.
+fn move_to_port_group(
+    config: &mut ServerConfig,
+    old: &models::port_group::Model,
+    new: &models::port_group::Model,
+) {
+    if config.public_port == old.game_port {
+        config.public_port = new.game_port;
+    }
+    config.bind_port = new.game_port;
+    config.rcon.port = new.rcon_port();
+    config.a2s.port = new.a2s_port();
 }
 
 #[utoipa::path(
@@ -351,6 +453,11 @@ pub async fn delete_port_group(
     Extension(claims): Extension<Claims>,
 ) -> Result<AppJson<SuccessResponse>, ArsaError> {
     require_admin(&claims)?;
+
+    models::port_group::Entity::find_by_id(id)
+        .one(&state.db)
+        .await?
+        .ok_or(ArsaError::NotFound)?;
 
     if load_settings(&state).await?.port_groups_only && all_port_groups(&state).await?.len() == 1 {
         return Err(ArsaError::ConflictMessage(
@@ -404,6 +511,7 @@ mod tests {
             serde_json::from_str(include_str!("defaults_seed.json")).unwrap();
         let mut config = seed.config;
         config.bind_port = game_port;
+        config.public_port = game_port;
         config.rcon.port = game_port + 1;
         config.a2s.port = game_port + 2;
         models::server::ActiveModel {
@@ -420,7 +528,11 @@ mod tests {
         .unwrap()
     }
 
-    async fn add_group(state: &Arc<AppState>, name: &str, game_port: u16) {
+    async fn add_group(
+        state: &Arc<AppState>,
+        name: &str,
+        game_port: u16,
+    ) -> models::port_group::Model {
         models::port_group::ActiveModel {
             name: Set(name.to_string()),
             game_port: Set(game_port),
@@ -428,7 +540,105 @@ mod tests {
         }
         .insert(&state.db)
         .await
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn reads_host_ports_from_port_bindings() {
+        let binding = |port: &str| PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: Some(port.to_string()),
+        };
+        let bindings = HashMap::from([
+            (
+                "2001/udp".to_string(),
+                Some(vec![binding("2001"), binding("2001")]),
+            ),
+            ("2003/udp".to_string(), Some(vec![binding("2003")])),
+            ("2002/udp".to_string(), Some(vec![binding("2002")])),
+            ("9000/tcp".to_string(), None),
+        ]);
+        assert_eq!(host_ports(bindings), [2001, 2002, 2003]);
+    }
+
+    #[tokio::test]
+    async fn free_groups_skip_taken_ports() {
+        let state = state().await;
+        add_group(&state, "A", 2001).await;
+        add_group(&state, "B", 2004).await;
+        let me = add_server(&state, "me", 2001, false).await;
+
+        // Something outside ARSA holds A's RCON port: A must not be offered to switch to.
+        let free: Vec<String> = free_port_groups(&state, me.uuid, &[2002])
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(free, ["B"]);
+
+        let ArsaError::PortConflict(conflict) =
+            port_conflict_error(&state, &me, vec![], vec![2002]).await
+        else {
+            panic!("expected a port conflict");
+        };
+        let free: Vec<String> = conflict
+            .free_port_groups
+            .into_iter()
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(free, ["B"]);
+    }
+
+    #[tokio::test]
+    async fn changing_game_port_moves_the_group_servers() {
+        let state = state().await;
+        let old = add_group(&state, "A", 2001).await;
+        let on_group = add_server(&state, "on A", 2001, true).await;
+        let custom = add_server(&state, "custom", 2002, false).await;
+
+        // A NAT setup advertising a different public port keeps it.
+        let mut nat = add_server(&state, "nat", 2001, false).await;
+        let mut config = nat.config.clone();
+        config.public_port = 30001;
+        let mut active: models::server::ActiveModel = nat.into();
+        active.config = Set(config);
+        nat = active.update(&state.db).await.unwrap();
+
+        let new = models::port_group::Model {
+            game_port: 3001,
+            ..old.clone()
+        };
+        let mut moved = move_group_servers(&state.db, &old, &new).await.unwrap();
+        moved.sort();
+        let mut expected = vec![on_group.uuid, nat.uuid];
+        expected.sort();
+        assert_eq!(moved, expected);
+
+        let find = |uuid| {
+            let db = state.db.clone();
+            async move {
+                models::server::Entity::find_by_id(uuid)
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .config
+            }
+        };
+        let config = find(on_group.uuid).await;
+        assert_eq!(server_ports(&config), [3001, 3002, 3003]);
+        assert_eq!(config.public_port, 3001);
+        assert_eq!(find(nat.uuid).await.public_port, 30001);
+        assert_eq!(server_ports(&find(custom.uuid).await), [2002, 2003, 2004]);
+
+        // Renaming only moves nothing.
+        assert!(
+            move_group_servers(&state.db, &new, &new)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -465,7 +675,7 @@ mod tests {
         add_server(&state, "custom", 2008, true).await;
         let me = add_server(&state, "me", 2001, false).await;
 
-        let free: Vec<String> = free_port_groups(&state, me.uuid)
+        let free: Vec<String> = free_port_groups(&state, me.uuid, &[])
             .await
             .unwrap()
             .into_iter()
