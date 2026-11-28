@@ -23,12 +23,14 @@ pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Respo
         .as_ref()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
+    // No session, an unknown one, or one that could not be refreshed: the user has to sign in (again).
     let claims = get_claims(&state, cookie_manager)
         .await
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
+    // Signed in, but not allowed to use the app.
     if !claims.has_role(&AppConfig::get().access_role) {
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err(StatusCode::FORBIDDEN);
     }
 
     req.extensions_mut().insert(claims);
