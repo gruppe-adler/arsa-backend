@@ -96,9 +96,12 @@ pub struct LogFileChunkResponse {
     pub file_content: String,
     /// Byte offset to pass on the next request to receive only new content
     pub offset: u64,
-    /// True when the requested offset was past the end of the file (the file was
-    /// truncated or replaced) and the content was read from the start instead
+    /// True when the file was truncated or replaced since the previous request (the
+    /// offset is past its end, or its start no longer matches `head`), so the content
+    /// was read from the start instead
     pub reset: bool,
+    /// Fingerprint of the start of the file; pass it with `offset` on the next request
+    pub head: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
