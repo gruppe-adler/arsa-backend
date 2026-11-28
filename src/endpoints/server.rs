@@ -1,6 +1,6 @@
 use axum::{
     Extension,
-    extract::{Json, Path, State},
+    extract::{Json, Path, Query, State},
 };
 use bollard::{
     models::{
@@ -34,7 +34,7 @@ use std::{
 };
 use tokio::{
     fs::{self, File},
-    io::{AsyncBufReadExt, AsyncSeekExt, BufReader, SeekFrom},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, BufReader, SeekFrom},
 };
 use utoipa::{IntoParams, ToSchema};
 
@@ -75,6 +75,17 @@ pub enum Branch {
     #[sea_orm(string_value = "experimental")]
     #[serde(rename = "experimental")]
     Experimental,
+}
+
+#[derive(IntoParams, Deserialize)]
+#[into_params(parameter_in = Query)]
+pub struct LogFileQuery {
+    /// Byte offset to read from (the `offset` returned by the previous request).
+    /// Omit to read the whole file.
+    pub offset: Option<u64>,
+    /// The `head` returned by the previous request. When the start of the file no
+    /// longer matches it, the file was replaced and is read from the start again.
+    pub head: Option<String>,
 }
 
 #[derive(IntoParams, Deserialize)]
@@ -269,6 +280,101 @@ pub async fn get_logs(
     Ok(AppJson(result_logs))
 }
 
+/// How many bytes at the start of a log file identify it (see [`read_log_from_offset`]).
+const LOG_HEAD_LEN: u64 = 256;
+
+/// FNV-1a: a small hash that, unlike `DefaultHasher`, is stable across builds, so a
+/// `head` stays valid when the backend restarts between polls.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+/// Fingerprint the first bytes of the file as `"<length>:<hash>"`.
+async fn log_head(file: &mut File, len: u64) -> std::io::Result<String> {
+    let head_len = len.min(LOG_HEAD_LEN);
+    let mut bytes = vec![0; head_len as usize];
+    file.seek(SeekFrom::Start(0)).await?;
+    file.read_exact(&mut bytes).await?;
+    Ok(format!("{head_len}:{:016x}", fnv1a(&bytes)))
+}
+
+/// Does the start of the file still match a `head` from an earlier read?
+async fn head_matches(file: &mut File, len: u64, head: &str) -> std::io::Result<bool> {
+    let Some(head_len) = head
+        .split_once(':')
+        .and_then(|(n, _)| n.parse::<u64>().ok())
+    else {
+        return Ok(false);
+    };
+    if head_len > len || head_len > LOG_HEAD_LEN {
+        return Ok(false);
+    }
+    Ok(log_head(file, head_len).await? == head)
+}
+
+/// Length of `bytes` without an incomplete UTF-8 sequence at the very end (the writer
+/// is mid-character). Invalid bytes earlier on do not matter: they are decoded lossily.
+fn complete_utf8_len(bytes: &[u8]) -> usize {
+    // A sequence is at most 4 bytes, so its lead byte is among the last 4.
+    let window_start = bytes.len().saturating_sub(4);
+    let lead = bytes[window_start..]
+        .iter()
+        .rposition(|&byte| byte & 0b1100_0000 != 0b1000_0000)
+        .map(|i| window_start + i);
+    match lead.map(|i| (i, std::str::from_utf8(&bytes[i..]))) {
+        Some((i, Err(err))) if err.valid_up_to() == 0 && err.error_len().is_none() => i,
+        _ => bytes.len(),
+    }
+}
+
+/// Read `path` starting at byte `offset` (or from the start when `None`).
+///
+/// The file was truncated or replaced when the offset is past its end, or when its
+/// first bytes no longer match `head`. Then the whole file is returned with `reset`
+/// set. An incomplete UTF-8 sequence at the end (the writer is mid-character) is left
+/// out and picked up by the next call.
+async fn read_log_from_offset(
+    path: &std::path::Path,
+    offset: Option<u64>,
+    head: Option<&str>,
+) -> std::io::Result<LogFileChunkResponse> {
+    let mut file = File::open(path).await?;
+    let len = file.metadata().await?.len();
+
+    let reset = match (offset, head) {
+        (None, _) => false,
+        (Some(offset), _) if offset > len => true,
+        (Some(_), Some(head)) => !head_matches(&mut file, len, head).await?,
+        (Some(_), None) => false,
+    };
+    let start = offset.filter(|_| !reset).unwrap_or(0);
+    let head = log_head(&mut file, len).await?;
+
+    if start == len {
+        return Ok(LogFileChunkResponse {
+            file_content: String::new(),
+            offset: len,
+            reset,
+            head,
+        });
+    }
+
+    file.seek(SeekFrom::Start(start)).await?;
+    let mut bytes = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut bytes).await?;
+
+    let used = complete_utf8_len(&bytes);
+
+    Ok(LogFileChunkResponse {
+        file_content: String::from_utf8_lossy(&bytes[..used]).into_owned(),
+        offset: start + used as u64,
+        reset,
+        head,
+    })
+}
+
 #[utoipa::path(
     get,
     tag = "server",
@@ -278,9 +384,10 @@ pub async fn get_logs(
         ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
         ("log" = String, Path, description = "Log folder name", example = "profileDir"),
         ("log_type" = LogType, Path, description = "Log file type", example = "console.log"),
+        LogFileQuery,
     ),
     responses(
-        (status = OK, description = "Log file content", body = FileContentResponse),
+        (status = OK, description = "Log file content", body = LogFileChunkResponse),
         (status = NOT_FOUND, description = "Server or log was not found", body = ErrorResponse),
         (status = BAD_REQUEST, description = "Invalid log directory name", body = ErrorResponse)
     )
@@ -288,7 +395,8 @@ pub async fn get_logs(
 pub async fn get_log_file(
     State(state): State<Arc<AppState>>,
     Path((id, log, log_type)): Path<(Uuid, String, LogType)>,
-) -> Result<AppJson<FileContentResponse>, ArsaError> {
+    Query(LogFileQuery { offset, head }): Query<LogFileQuery>,
+) -> Result<AppJson<LogFileChunkResponse>, ArsaError> {
     let _ = models::server::Entity::find_by_id(id)
         .one(&state.db)
         .await?
@@ -300,8 +408,9 @@ pub async fn get_log_file(
 
     let log_path = get_logs_path(&id, Some(log), Some(log_type)).await?;
 
-    let file_content = fs::read_to_string(log_path).await?;
-    Ok(AppJson(FileContentResponse { file_content }))
+    Ok(AppJson(
+        read_log_from_offset(&log_path, offset, head.as_deref()).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1788,7 +1897,90 @@ async fn create_dirs(uuid: Uuid) -> Result<(), ArsaError> {
 
 #[cfg(test)]
 mod tests {
-    use super::port_in_use_error;
+    use super::{complete_utf8_len, port_in_use_error, read_log_from_offset};
+
+    #[tokio::test]
+    async fn reads_log_incrementally() {
+        let path = std::env::temp_dir().join(format!("arsa-log-test-{}.log", uuid::Uuid::new_v4()));
+        tokio::fs::write(&path, "one\ntwo\n").await.unwrap();
+
+        let full = read_log_from_offset(&path, None, None).await.unwrap();
+        assert_eq!(full.file_content, "one\ntwo\n");
+        assert_eq!(full.offset, 8);
+        assert!(!full.reset);
+
+        let idle = read_log_from_offset(&path, Some(full.offset), None)
+            .await
+            .unwrap();
+        assert_eq!(idle.file_content, "");
+        assert_eq!(idle.offset, 8);
+
+        // Append a line ending in the first byte of a two-byte character ("é" = C3 A9).
+        let mut bytes = b"one\ntwo\nthr".to_vec();
+        bytes.push(0xC3);
+        tokio::fs::write(&path, &bytes).await.unwrap();
+        let partial = read_log_from_offset(&path, Some(8), None).await.unwrap();
+        assert_eq!(partial.file_content, "thr");
+        assert_eq!(partial.offset, 11);
+
+        bytes.extend_from_slice(&[0xA9, b'\n']);
+        tokio::fs::write(&path, &bytes).await.unwrap();
+        let rest = read_log_from_offset(&path, Some(partial.offset), None)
+            .await
+            .unwrap();
+        assert_eq!(rest.file_content, "é\n");
+        assert_eq!(rest.offset, bytes.len() as u64);
+
+        // Truncated file: offset is past the end, so it starts over.
+        tokio::fs::write(&path, "new\n").await.unwrap();
+        let reset = read_log_from_offset(&path, Some(rest.offset), None)
+            .await
+            .unwrap();
+        assert!(reset.reset);
+        assert_eq!(reset.file_content, "new\n");
+        assert_eq!(reset.offset, 4);
+
+        tokio::fs::remove_file(&path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn detects_replaced_log_that_grew_past_offset() {
+        let path = std::env::temp_dir().join(format!("arsa-log-test-{}.log", uuid::Uuid::new_v4()));
+        tokio::fs::write(&path, "old session\n").await.unwrap();
+        let first = read_log_from_offset(&path, None, None).await.unwrap();
+
+        // Same file growing: no reset.
+        tokio::fs::write(&path, "old session\nmore\n")
+            .await
+            .unwrap();
+        let grown = read_log_from_offset(&path, Some(first.offset), Some(&first.head))
+            .await
+            .unwrap();
+        assert!(!grown.reset);
+        assert_eq!(grown.file_content, "more\n");
+
+        // Replaced by a new file that is already longer than the old offset.
+        tokio::fs::write(&path, "new session started here\n")
+            .await
+            .unwrap();
+        let replaced = read_log_from_offset(&path, Some(grown.offset), Some(&grown.head))
+            .await
+            .unwrap();
+        assert!(replaced.reset);
+        assert_eq!(replaced.file_content, "new session started here\n");
+
+        tokio::fs::remove_file(&path).await.unwrap();
+    }
+
+    #[test]
+    fn holds_back_only_a_trailing_incomplete_character() {
+        assert_eq!(complete_utf8_len(b"abc"), 3);
+        assert_eq!(complete_utf8_len(b"thr\xC3"), 3);
+        assert_eq!(complete_utf8_len(b"thr\xC3\xA9"), 5);
+        assert_eq!(complete_utf8_len(b"\xFFthr\xC3"), 4);
+        assert_eq!(complete_utf8_len(b"x\xE2\x82"), 1);
+        assert_eq!(complete_utf8_len(b"abc\xFF"), 4);
+    }
 
     fn docker_error(message: &str) -> bollard::errors::Error {
         bollard::errors::Error::DockerResponseServerError {
