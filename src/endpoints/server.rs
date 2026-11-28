@@ -1,6 +1,6 @@
 use axum::{
     Extension,
-    extract::{Json, Path, State},
+    extract::{Json, Path, Query, State},
 };
 use bollard::{
     models::{
@@ -34,7 +34,7 @@ use std::{
 };
 use tokio::{
     fs::{self, File},
-    io::{AsyncBufReadExt, AsyncSeekExt, BufReader, SeekFrom},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, BufReader, SeekFrom},
 };
 use utoipa::{IntoParams, ToSchema};
 
@@ -75,6 +75,14 @@ pub enum Branch {
     #[sea_orm(string_value = "experimental")]
     #[serde(rename = "experimental")]
     Experimental,
+}
+
+#[derive(IntoParams, Deserialize)]
+#[into_params(parameter_in = Query)]
+pub struct LogFileQuery {
+    /// Byte offset to read from (the `offset` returned by the previous request).
+    /// Omit to read the whole file.
+    pub offset: Option<u64>,
 }
 
 #[derive(IntoParams, Deserialize)]
@@ -269,6 +277,45 @@ pub async fn get_logs(
     Ok(AppJson(result_logs))
 }
 
+/// Read `path` starting at byte `offset` (or from the start when `None`).
+///
+/// An offset past the end of the file means it was truncated or replaced, so the
+/// whole file is returned with `reset` set. An incomplete UTF-8 sequence at the end
+/// (the writer is mid-character) is left out and picked up by the next call.
+async fn read_log_from_offset(
+    path: &std::path::Path,
+    offset: Option<u64>,
+) -> std::io::Result<LogFileChunkResponse> {
+    let mut file = File::open(path).await?;
+    let len = file.metadata().await?.len();
+
+    let reset = offset.is_some_and(|offset| offset > len);
+    let start = offset.filter(|_| !reset).unwrap_or(0);
+
+    if start == len {
+        return Ok(LogFileChunkResponse {
+            file_content: String::new(),
+            offset: len,
+            reset,
+        });
+    }
+
+    file.seek(SeekFrom::Start(start)).await?;
+    let mut bytes = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut bytes).await?;
+
+    let used = match std::str::from_utf8(&bytes) {
+        Err(err) if err.error_len().is_none() => err.valid_up_to(),
+        _ => bytes.len(),
+    };
+
+    Ok(LogFileChunkResponse {
+        file_content: String::from_utf8_lossy(&bytes[..used]).into_owned(),
+        offset: start + used as u64,
+        reset,
+    })
+}
+
 #[utoipa::path(
     get,
     tag = "server",
@@ -278,9 +325,10 @@ pub async fn get_logs(
         ("id" = Uuid, Path, description = "Id of the server", example = "f30b8424-28d6-4b0a-9348-9f05327fa886"),
         ("log" = String, Path, description = "Log folder name", example = "profileDir"),
         ("log_type" = LogType, Path, description = "Log file type", example = "console.log"),
+        LogFileQuery,
     ),
     responses(
-        (status = OK, description = "Log file content", body = FileContentResponse),
+        (status = OK, description = "Log file content", body = LogFileChunkResponse),
         (status = NOT_FOUND, description = "Server or log was not found", body = ErrorResponse),
         (status = BAD_REQUEST, description = "Invalid log directory name", body = ErrorResponse)
     )
@@ -288,7 +336,8 @@ pub async fn get_logs(
 pub async fn get_log_file(
     State(state): State<Arc<AppState>>,
     Path((id, log, log_type)): Path<(Uuid, String, LogType)>,
-) -> Result<AppJson<FileContentResponse>, ArsaError> {
+    Query(LogFileQuery { offset }): Query<LogFileQuery>,
+) -> Result<AppJson<LogFileChunkResponse>, ArsaError> {
     let _ = models::server::Entity::find_by_id(id)
         .one(&state.db)
         .await?
@@ -300,8 +349,7 @@ pub async fn get_log_file(
 
     let log_path = get_logs_path(&id, Some(log), Some(log_type)).await?;
 
-    let file_content = fs::read_to_string(log_path).await?;
-    Ok(AppJson(FileContentResponse { file_content }))
+    Ok(AppJson(read_log_from_offset(&log_path, offset).await?))
 }
 
 #[utoipa::path(
@@ -1788,7 +1836,51 @@ async fn create_dirs(uuid: Uuid) -> Result<(), ArsaError> {
 
 #[cfg(test)]
 mod tests {
-    use super::port_in_use_error;
+    use super::{port_in_use_error, read_log_from_offset};
+
+    #[tokio::test]
+    async fn reads_log_incrementally() {
+        let path = std::env::temp_dir().join(format!("arsa-log-test-{}.log", uuid::Uuid::new_v4()));
+        tokio::fs::write(&path, "one\ntwo\n").await.unwrap();
+
+        let full = read_log_from_offset(&path, None).await.unwrap();
+        assert_eq!(full.file_content, "one\ntwo\n");
+        assert_eq!(full.offset, 8);
+        assert!(!full.reset);
+
+        let idle = read_log_from_offset(&path, Some(full.offset))
+            .await
+            .unwrap();
+        assert_eq!(idle.file_content, "");
+        assert_eq!(idle.offset, 8);
+
+        // Append a line ending in the first byte of a two-byte character ("é" = C3 A9).
+        let mut bytes = b"one\ntwo\nthr".to_vec();
+        bytes.push(0xC3);
+        tokio::fs::write(&path, &bytes).await.unwrap();
+        let partial = read_log_from_offset(&path, Some(8)).await.unwrap();
+        assert_eq!(partial.file_content, "thr");
+        assert_eq!(partial.offset, 11);
+
+        bytes.extend_from_slice(&[0xA9, b'\n']);
+        tokio::fs::write(&path, &bytes).await.unwrap();
+        let rest = read_log_from_offset(&path, Some(partial.offset))
+            .await
+            .unwrap();
+        assert_eq!(rest.file_content, "é\n");
+        assert_eq!(rest.offset, bytes.len() as u64);
+
+        // Truncated file: offset is past the end, so it starts over.
+        tokio::fs::write(&path, "new\n").await.unwrap();
+        let reset = read_log_from_offset(&path, Some(rest.offset))
+            .await
+            .unwrap();
+        assert!(reset.reset);
+        assert_eq!(reset.file_content, "new\n");
+        assert_eq!(reset.offset, 4);
+
+        tokio::fs::remove_file(&path).await.unwrap();
+    }
 
     fn docker_error(message: &str) -> bollard::errors::Error {
         bollard::errors::Error::DockerResponseServerError {
